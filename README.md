@@ -7,9 +7,9 @@ also assembles your DMG. Your game files and keys stay on your device.
 
 **[Open the browser builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/)**
 
-GitHub Actions rebuilds and publishes the site from `main`. An optimized cold
-local browser run reached a ready DMG in **3m31s** on this M4 Pro, compared with
-the original 74.7-minute run. Hosted network timing has not been
+GitHub Actions rebuilds and publishes the site from `main`. Optimized cold
+local browser runs reached a ready DMG in **3m31s to 3m59s** on this M4 Pro,
+compared with the original 74.7-minute run. Hosted network timing has not been
 benchmarked. The generated app also passes complete CPU output comparisons and
 all seven relocated native gameplay/audio checks. See the
 [verification details](docs/browser-release.md#current-verified-state).
@@ -40,6 +40,10 @@ optimized cold local browser run measured 3m31s to a ready DMG and 3m39s
 including download and checksum verification. Hosted network timing has not been
 benchmarked. macOS compiles the generated Metal shaders on first
 launch. The finished game needs no Homebrew, Python or .NET installation.
+
+
+The app and mounted disk image use the Switch HOME-menu artwork extracted from
+your own game dump. That artwork is generated locally during your build.
 
 The game includes native sound, keyboard/controller input, uncapped rendering
 and an FPS counter. Frame limit and counter settings are together under

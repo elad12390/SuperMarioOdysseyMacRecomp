@@ -22,9 +22,14 @@ Acceptance:
   short/long sources, cancellation and failed sink writes reject. OPFS failure
   removes incomplete job output; no download is reported as ready.
 - Corrupt payload and corrupt container metadata are rejected by validation.
+- A regular root `.VolumeIcon.icns` automatically sets the root folder's
+  `kHasCustomIcon` and the icon file's `kIsInvisible` Finder flags. A real readonly
+  mount exposes both flags and preserves the supplied ICNS bytes. Without this
+  file, the existing writer's complete fixed-timestamp output stays identical.
 
 Only regular files and directories are supported. Symlinks, hard links,
-resource forks, xattrs and Finder layout customization are outside this API.
+resource forks, general xattrs and Finder layout customization are outside this
+API. The volume icon does not set host-file custom-icon xattrs on a downloaded DMG.
 Callers must flatten framework symlinks before packaging. The caller supplies
 already compiled, signed, relocatable app bytes; image creation does not compile
 or sign the game. Native fixture compilation is test-only.

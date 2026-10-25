@@ -87,6 +87,30 @@ subsequent recorded run uses a fresh isolated save and passes every action.
 Private reports and recordings stay under `tmp/odyssey/push-optimization/` and
 `tmp/odyssey/harness/`; no generated game data enters the public source or site.
 
+## Game artwork and disk-image icons
+
+The extractor reads the HOME-menu artwork from the game control content,
+preferring the American English icon and otherwise using the first available
+control icon. The browser converts that local image into one 256-pixel ICNS
+resource. The signed app receives it as `Contents/Resources/Game.icns`, which
+its existing `CFBundleIconFile` selects. The disk-image root receives the exact
+same bytes as `.VolumeIcon.icns` after app sealing. HFSX catalog metadata marks
+the root with `kHasCustomIcon` and the icon file with `kIsInvisible`. No Nintendo
+artwork is bundled in the public tools, runtime or website.
+
+The icon-bearing real browser build reached a ready DMG in 238,562 ms
+(3m59s), finishing download/checksum verification at 247,742 ms. Its image passes
+`hdiutil verify`, and its app passes `codesign --verify --deep --strict`. The
+mounted `.VolumeIcon.icns` and signed app icon have identical bytes and match
+the previously verified game icon. Native metadata reads confirm root Finder
+flags `0x0400` and hidden-icon flags `0x4000`. All 23 disk-image regression cases
+pass, including byte-identical no-icon output.
+
+This supplies the mounted volume icon. The downloaded `.dmg` file itself can
+still use macOS's standard disk-image icon: a browser download cannot set custom
+Finder file metadata on the host filesystem. Game artwork remains local in
+either case. No native conversion helper is introduced.
+
 ## Source and output layout
 
 - `tools/browser-builder/web/`: static intake, progress and download interface.

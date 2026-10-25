@@ -58,6 +58,17 @@ extra bytes, and closes each opened reader in a finally block. No source is
 opened during `planDmg(entries, options)` preflight. Directories are implicit by
 default; explicit directories have type `directory`, size 0 and no `open`.
 
+To supply the mounted volume's icon, include a regular root file named exactly
+`.VolumeIcon.icns` with the caller's ICNS bytes. The writer automatically sets
+`kHasCustomIcon` (0x0400) on the root folder and `kIsInvisible` (0x4000) on that
+file. Nested files, differently cased names and directories do not opt in.
+Without that file the output is byte-for-byte unchanged. This metadata belongs
+to the mounted volume; it does not set custom-icon xattrs on the downloaded
+`.dmg` file in the host filesystem.
+Local macOS acceptance with the user's existing ICNS confirmed that
+`NSWorkspace.icon(forFile:)` renders the supplied artwork for the mounted volume;
+the DMG file itself retains its generic icon before and after mounting.
+
 `writeDmg(entries, { write(bytes) }, options)` accepts any sequential sink. Every
 write is awaited; the sink must consume/copy its bytes before resolving because
 the chunk is reused. This core function does not close or abort a caller-owned
@@ -137,6 +148,11 @@ for volume headers, forks, B-trees, permissions and HFSX binary name comparison.
 Modern HFSX subfolder-count flags and the catalog field at offset 84 follow
 [Apple's current hfs_format.h](https://github.com/apple-oss-distributions/hfs/blob/main/core/hfs_format.h),
 which extends the older TN1150 layout. A real fsck check covers these fields.
+Custom-volume-icon flags were checked against the installed Apple SDK's
+`CarbonCore.framework/Headers/Finder.h` and `usr/include/hfs/hfs_format.h`:
+both catalog records put `userInfo` at byte 48 and its Finder flags at byte 8,
+so the 16-bit big-endian flags occupy catalog-record bytes 56-57. These are
+separate from the catalog flags at byte 2 and the volume header's Finder data.
 The HFS+ normalization version is frozen at Unicode 3.2, with Apple's exclusions;
 JavaScript's evolving `String.normalize` is unsuitable for this format.
 

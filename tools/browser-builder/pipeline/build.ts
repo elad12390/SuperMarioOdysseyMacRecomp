@@ -65,7 +65,7 @@ async function staticJson<T>(url: URL): Promise<T> {
   if (!response.ok) throw new Error('This website’s conversion tools are incomplete. No private files were uploaded.');
   return response.json();
 }
-async function iconEntry(root: FileSystemDirectoryHandle): Promise<DmgEntry | undefined> {
+async function gameIcon(root: FileSystemDirectoryHandle): Promise<Blob | undefined> {
   let handle: FileSystemFileHandle;
   try { handle = await getFile(root, 'icon.jpg'); } catch { return; }
   const bitmap = await createImageBitmap(await handle.getFile());
@@ -77,7 +77,7 @@ async function iconEntry(root: FileSystemDirectoryHandle): Promise<DmgEntry | un
     const header = new Uint8Array(16), view = new DataView(header.buffer);
     header.set(new TextEncoder().encode('icns')); view.setUint32(4, png.size + 16);
     header.set(new TextEncoder().encode('ic08'), 8); view.setUint32(12, png.size + 8);
-    return entryFromBlob('Super Mario Odyssey.app/Contents/Resources/Game.icns', new Blob([header, png]));
+    return new Blob([header, png], { type: 'image/icns' });
   } finally { bitmap.close(); }
 }
 
@@ -149,10 +149,14 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
     }
     for (const file of rewritten.files as { name: string; size: number }[]) entries.push(sourceEntry(patched, { path: file.name, size: file.size }, app + 'patched_v0/'));
     for (const file of graphics.files as SourceFile[]) entries.push(sourceEntry(shaderOutput, file, app));
-    const icon = await iconEntry(extracted); if (icon) entries.push(icon);
+    const icon = await gameIcon(extracted);
+    if (icon) entries.push(entryFromBlob('Super Mario Odyssey.app/Contents/Resources/Game.icns', icon));
     if (!entries.some(entry => entry.path.endsWith('/main.patched.bin')) || !entries.some(entry => entry.path.endsWith('/shader_map.tsv'))) throw new Error('The converters did not produce a complete playable app.');
     entries.push(await provenance({ nsp: input.nsp, extraction, rewriter: rewritten, shaderChain: graphics.chain, runtimeSource: template.source }, p => report({ stage: active, message: `Recording local input provenance · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.fraction })));
     const sealedEntries = await sealApp(entries, { appName: 'Super Mario Odyssey.app', signal, progress: p => report({ stage: active, message: `Sealing app resources · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.totalBytes ? p.hashedBytes / p.totalBytes : undefined }) });
+    // Volume artwork lives outside the signed app; reuse the exact locally
+    // extracted HOME-menu icon without adding a public bundled game asset.
+    if (icon) sealedEntries.push(entryFromBlob('.VolumeIcon.icns', icon));
     signal.throwIfAborted(); active = 'dmg'; report({ stage: active, message: 'Creating your disk image locally…' });
     const result = await writeDmgToOpfs(sealedEntries, job, 'Super Mario Odyssey.dmg', { signal, volumeName: 'Super Mario Odyssey', onProgress: p => report({ stage: active, message: `Creating disk image · ${(p.writtenBytes / 1024 ** 3).toFixed(2)} GB`, fraction: Math.min(p.writtenBytes / p.volumeBytes, 1) }) });
     await closePackedStores(shaderOutput);

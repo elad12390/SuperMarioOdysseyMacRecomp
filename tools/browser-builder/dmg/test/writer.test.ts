@@ -12,18 +12,61 @@ function file(path: string, value = "hello", mode = 0o644): DmgEntry {
     } };
   } };
 }
-async function image(entries: DmgEntry[] = [file("Fixture.app/Contents/MacOS/fixture", "ARM64 fixture", 0o755)]) {
+async function image(entries: DmgEntry[] = [file("Fixture.app/Contents/MacOS/fixture", "ARM64 fixture", 0o755)], timestamp?: number) {
   const parts: Uint8Array[] = [];
-  const result = await writeDmg(entries, { write: async b => { parts.push(b.slice()); } }, { volumeName: "Browser Fixture" });
+  const result = await writeDmg(entries, { write: async b => { parts.push(b.slice()); } }, { volumeName: "Browser Fixture", timestamp });
   const bytes = new Uint8Array(parts.reduce((n, b) => n + b.length, 0));
   let at = 0; for (const b of parts) { bytes.set(b, at); at += b.length; }
   return { bytes, result };
+}
+function catalogFinderInfo(bytes: Uint8Array) {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const catalog = v.getUint32(1024 + 288) * 4096;
+  const records: { id: number; parent: number; name: string; info: Uint8Array }[] = [];
+  for (let node = v.getUint32(catalog + 24); node !== 0;) {
+    const start = catalog + node * 8192;
+    for (let r = 0; r < v.getUint16(start + 10); r++) {
+      const rec = start + v.getUint16(start + 8192 - 2 * (r + 1));
+      const data = rec + 2 + v.getUint16(rec);
+      if (v.getUint16(data) !== 1 && v.getUint16(data) !== 2) continue;
+      records.push({ id: v.getUint32(data + 8), parent: v.getUint32(rec + 2),
+        name: new TextDecoder("utf-16be").decode(bytes.subarray(rec + 8, data)),
+        info: bytes.slice(data + 48, data + 80) });
+    }
+    node = v.getUint32(start);
+  }
+  return records;
 }
 
 describe("actual HFSX + UDIF bytes", () => {
   test("uses the standard incremental CRC32 vector", () => {
     expect(crc32(text.encode("123456789"))).toBe(0xcbf43926);
     expect(crc32(text.encode("56789"), crc32(text.encode("1234")))).toBe(0xcbf43926);
+  });
+  test("marks the root custom icon and hides only its standard icon file", async () => {
+    const { bytes } = await image([file(".VolumeIcon.icns", "icon fixture"), file("Nested/.VolumeIcon.icns")]);
+    await inspectDmg({ size: bytes.length, read: async (o, n) => bytes.slice(o, o + n) });
+    const records = catalogFinderInfo(bytes);
+    const root = records.find(r => r.id === 2)!;
+    const icon = records.find(r => r.parent === 2 && r.name === ".VolumeIcon.icns")!;
+    const custom = new Uint8Array(32); custom[8] = 0x04;
+    const invisible = new Uint8Array(32); invisible[8] = 0x40;
+    expect(root.info).toEqual(custom);
+    expect(icon.info).toEqual(invisible);
+    for (const record of records) if (record !== root && record !== icon) expect(record.info).toEqual(new Uint8Array(32));
+  });
+  test("preserves the complete pre-icon writer output when no icon is supplied", async () => {
+    const { bytes } = await image(undefined, 1700000000);
+    expect(new Bun.CryptoHasher("sha256").update(bytes).digest("hex")).toBe("0ef402b6797dbb14e0ce2150d6134928c48278d160b28f07e995c3b838b0ac76");
+    for (const record of catalogFinderInfo(bytes)) expect(record.info).toEqual(new Uint8Array(32));
+  });
+  test.each([
+    file("Nested/.VolumeIcon.icns"),
+    file(".volumeicon.icns"),
+    { path: ".VolumeIcon.icns", type: "directory" as const, size: 0, mode: 0o755 },
+  ])("does not select a nested icon, differently cased name or directory: %j", async entry => {
+    const { bytes } = await image([entry]);
+    for (const record of catalogFinderInfo(bytes)) expect(record.info).toEqual(new Uint8Array(32));
   });
   test("has real volume headers, catalog fork, permissions and checksums", async () => {
     const { bytes, result } = await image();

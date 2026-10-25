@@ -5,7 +5,7 @@ import type { DmgEntry, DmgOptions } from "./types";
 interface Item {
   path: string; name: string; id: number; parent: number; directory: boolean;
   mode: number; size: number; start: number; blocks: number; children: number; subfolders: number;
-  source?: DmgEntry; explicit: boolean;
+  source?: DmgEntry; explicit: boolean; finderFlags?: number;
 }
 interface Record { parent: number; name: string; key: Uint8Array; data: () => Uint8Array; length: number }
 interface TreeNode { id: number; height: number; records: Record[]; previous: number; next: number }
@@ -30,7 +30,9 @@ function itemData(item: Item, time: number) {
   for (const at of [12, 16, 20, 24]) v.setUint32(at, time);
   v.setUint32(32, 99); v.setUint32(36, 99);
   v.setUint16(42, (item.directory ? 0o040000 : 0o100000) | item.mode);
-  // Finder treats .app directories as bundles by extension; no private Finder data.
+  // HFSPlusCatalog{Folder,File}.userInfo (48) + Finder flags (8), big-endian.
+  if (item.finderFlags) v.setUint16(56, item.finderFlags);
+  // Finder treats .app directories as bundles by extension.
   if (!item.directory) fork(b, 88, item.size, item.start, item.blocks);
   return b;
 }
@@ -110,6 +112,11 @@ export function planDmg(entries: readonly DmgEntry[], options: DmgOptions = {}):
     if (!Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o170777 || (entry.mode & ~0o170777) || (typeBits && typeBits !== (entry.type === "directory" ? 0o040000 : 0o100000))) throw Error("Unsupported mode or file type");
     if (entry.type === "directory" ? entry.size !== 0 || !!entry.open : typeof entry.open !== "function") throw Error("Files need open(); directories must have zero size and no payload");
     insert(hfsPath(entry.path), { ...entry });
+  }
+  const volumeIcon = map.get(".VolumeIcon.icns");
+  if (volumeIcon && !volumeIcon.directory) {
+    root.finderFlags = 0x0400; // kHasCustomIcon (Finder.h)
+    volumeIcon.finderFlags = 0x4000; // kIsInvisible
   }
   const tree = buildTree(recordsFor(items, time));
   // Header map covers all nodes. Reject instead of silently emitting a bad tree.
