@@ -71,6 +71,8 @@ bun run dev
 
 The Pages workflow can be dispatched manually. A push to `main` also runs it when the workflow file itself changes; the path filter avoids starting a full release for unrelated commits and makes initial workflow registration explicit.
 
+The SPIRV-Cross build requires Emscripten 6.0.13. Its version gate accepts both Homebrew's `6.0.13-git` and the official SDK's `6.0.13 (commit-hash)` banner; adjacent versions remain rejected. The SDK checkout and all 23 pinned Cross source/license hashes are checked separately.
+
 The development `bun run build` command builds only the interface. Use `build:release` for the complete site and runtime.
 
 The static development server binds only to `127.0.0.1:4381`, allows GET/HEAD,
