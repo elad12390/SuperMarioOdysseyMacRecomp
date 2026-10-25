@@ -61,7 +61,6 @@ jobs:
           bun run --cwd tools/browser-builder typecheck
           bun run --cwd tools/browser-builder test
           (cd tools/browser-builder/dmg && bun install --frozen-lockfile && bun test ./test)
-          bun run --cwd tools/browser-builder/signing test
       - name: Build static tools and matching ARM64 template
         shell: bash
         run: |
@@ -71,6 +70,7 @@ jobs:
           bun run --cwd tools/browser-builder build:release --reuse-tools --reuse-runtime
           bun -e 'const r=await Bun.file("tmp/odyssey/browser-release-tools/release-latest.json").json(); if(r.toolsBuildRan || r.runtimeBuildRan) throw new Error("Reuse rebuilt native/tool assets");'
           export SWITCHRECOMP_RUNTIME_PUBLIC="$(bun -e 'console.log((await Bun.file("tmp/odyssey/browser-release-tools/release-latest.json").json()).runtimeDirectory)')"
+          bun run --cwd tools/browser-builder/signing test
           bun test ./tools/browser-builder/runtime/tests/portable.test.ts
           bun tools/browser-builder/tests/release-reuse.mjs --runtime "$SWITCHRECOMP_RUNTIME_PUBLIC"
       - name: Upload only public static artifacts

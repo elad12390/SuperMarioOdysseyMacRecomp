@@ -6,7 +6,7 @@ import { sealApp, inspectAdhocLauncher } from "../index";
 import { parseEnvelope } from "../plist";
 import type { DmgEntry } from "../../dmg/types";
 
-const repo = resolve(import.meta.dir, "../../../.."), pub = resolve(repo, "tmp/odyssey/browser-release/runtime-public/public");
+const repo = resolve(import.meta.dir, "../../../.."), pub = resolve(process.env.SWITCHRECOMP_RUNTIME_PUBLIC ?? resolve(repo, "tmp/odyssey/browser-release/runtime-public/public"));
 let entries: DmgEntry[], launcher: Uint8Array, resources: Uint8Array;
 const appName = "Super Mario Odyssey.app", prefix = appName + "/Contents/";
 const hex = (b: Uint8Array, name = "sha256") => createHash(name).update(b).digest("hex");
@@ -38,7 +38,9 @@ test("seals the actual template by changing only slot 3 and adding both resource
   expect(xml).toContain("private &amp; escaped&lt;name&gt;.bin");
   expect(xml).toContain(createHash("sha1").update(privateBytes).digest("base64"));
   expect(xml).toContain(createHash("sha256").update(privateBytes).digest("base64"));
-  expect(xml).toContain('cdhash H"9f958b0d1edadec6d50fcd6c9082cc236ade98e0"');
+  const oldHostSeal = parseEnvelope(new TextDecoder().decode(resources)).second.get('MacOS/dmhost');
+  expect(oldHostSeal).toBeDefined();
+  expect(parseEnvelope(xml).second.get('MacOS/dmhost')?.text).toBe(oldHostSeal!.text);
   const host = entries.find(e => e.path.endsWith("/MacOS/dmhost"))!;
   expect(output.find(e => e.path === host.path)).toBe(host);
 });
