@@ -61,6 +61,8 @@ Keep scope-specific instructions in the modules' AGENTS.md files.
 
 ## Source hygiene and delivery
 
+- Author and commit as Elad Ben-Haim <elad12390@gmail.com> using repository-local
+  Git settings. Do not use the work email or add AI attribution/co-author trailers.
 - Keep changes focused. Update the relevant build/runtime documentation with
   behavior, scope and process changes. Prefer concrete acceptance criteria.
 - Keep text ASCII unless a source name requires Unicode.
