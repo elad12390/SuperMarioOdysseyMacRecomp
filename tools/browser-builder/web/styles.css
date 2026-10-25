@@ -6,3 +6,5 @@
 .dropzone>.file-types{font-size:12px!important}
 footer{font-size:12px}
 @media(max-width:800px){.intro .lede{margin-top:18px}.builder{position:relative}.builder-header{display:block}.platform{position:absolute;right:24px;top:23px}h2{font-size:22px;margin-top:12px}.dropzone{min-height:180px}}
+
+.ownership-note{max-width:345px;font-size:13px;line-height:1.7;color:var(--muted);margin:24px 0 0}.ownership-note strong{display:block;color:inherit;margin-bottom:4px}footer>div{flex:1;min-width:0}footer p{margin:6px 0 10px}footer a{text-decoration:underline;text-underline-offset:3px}

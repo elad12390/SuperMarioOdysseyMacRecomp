@@ -105,9 +105,12 @@ build instead uses the pinned SIL OFL Nunito font and includes its license.
 Apple's extracted Metal compiler is not shipped. Required native/WASM dependency
 notices and reproducible source pins must accompany the hosted tools.
 
-The existing origin is `bgyss/SwitchRecomp`; the connected GitHub account has
-read access. Publishing requires the user's own repository/fork after release
-checks pass. No push or deployment has been performed for this feature.
+Source is published in the independent `elad12390/SuperMarioOdysseyMacRecomp`
+repository, with no upstream fork relationship. GitHub Actions builds and
+deploys the public tools; live verification of the renamed release is pending.
+The repository and website include the [project disclaimer](../DISCLAIMER.md):
+no original game or keys are provided, piracy is not condoned, and users must
+supply files they are legally entitled to use.
 
 ## Real release acceptance
 

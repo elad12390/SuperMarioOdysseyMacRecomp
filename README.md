@@ -10,6 +10,18 @@ Your game files and keys stay on your device.
 The renamed public release is being verified. The complete local browser-to-DMG
 build and the generated app's native gameplay, controls and audio have passed.
 
+## No game included
+
+The author does not condone piracy in any form. This is an **unofficial patching
+and conversion tool**. Neither this repository nor the website includes or
+distributes the original game, Nintendo game code or assets, firmware, console
+keys or a ready-made game download. You must supply your own game dump and
+console keys and be legally entitled to use them.
+
+The project is not affiliated with, endorsed by or sponsored by Nintendo. It
+does not grant rights to third-party material or guarantee that a particular
+use is lawful. Read the [full disclaimer](DISCLAIMER.md).
+
 ## Build your game
 
 1. Open the builder on your Mac.

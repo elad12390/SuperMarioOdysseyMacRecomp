@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - .github/workflows/browser-release.yml
+      - tools/browser-builder/**
+      - "!tools/browser-builder/**/*.md"
+      - scripts/patches/**
 
 permissions:
   contents: read
