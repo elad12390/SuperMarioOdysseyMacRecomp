@@ -13,22 +13,21 @@ assembly run locally in browser workers.
 
 ## Current verified state
 
-This feature is in development. The public website and complete browser-built
-playable DMG are not delivered yet.
+The complete local browser-to-gameplay path is verified. A real browser build produced a 7.01 GB DMG; its relocated app passed all seven native gameplay/audio checks. Public GitHub Pages deployment is the remaining release step.
 
 | Surface | Evidence |
 | --- | --- |
 | File intake | Real isolated browser selection and malformed-input rejection pass; no private upload request; desktop/mobile captures inspected. |
 | Extraction WASM | Real 5.61 GB NSP extraction and NCA integrity checks pass; all RomFS files and the app icon match the local native oracle. |
 | ARM64 rewriting WASM | All three modules and their 18 binary/TSV outputs match the original native pipeline. |
-| Shader WASM | Real vertex, pixel and compute outputs match native SPIR-V, metadata and MSL. All three geometry shaders pass all five topology/reader variants. The corrected compiler matches the native depth cases; final full-library acceptance is pending. |
+| Shader WASM | Real vertex, pixel and compute outputs match native SPIR-V, metadata and MSL. All three geometry shaders pass all five topology/reader variants. The corrected compiler matches the native depth cases. The actual app contains all 39,185 required Metal variants; all 66,422 declared shader/profile files pass size and hash verification, 27,228 available native sources match exactly, and all 27,228 reflection records match canonically. Retained framebuffer guards also pass fresh native analysis. |
 | Browser app sealing | A real browser-updated resource seal passes `codesign --verify --deep --strict` on a mounted DMG and a relocated app. The 70,000-file scale proof seals a 17.3 MB resource catalog, produces a real 333 MB DMG and passes the same macOS checks. Unsealed/tampered resources fail verification. |
 | Disk-image writer | A real streamed 4.30 GB HFSX/UDIF image passes `hdiutil` and filesystem verification, including a single file above 4 GiB. |
 | Public static release | Complete ~100 MB public WASM bundle and a source-built ARM64 native template assemble with a matching shader-chain identity; no private game input is included. |
 | Native source loading | A real Odyssey MSL shader compiles through Metal with `preserveInvariance`, matching the existing offline precision requirement. |
-| Standalone launcher | Builds for ARM64 and resolves data from its own app bundle, with saves/settings in Application Support rather than this checkout. Gameplay validation remains pending. |
+| Standalone launcher | Builds for ARM64 and resolves data from its own app bundle, with saves/settings in Application Support rather than this checkout. The actual relocated browser-generated app reaches Cap Kingdom with a fresh private save and responds to walking, jumping and camera controls. |
 | Full source regression | Formatting, strict workspace Clippy, `cargo test --workspace --locked` (78 tests) and both validation CLI cases pass. Browser unit checks include real tone/silence analysis; all 11 cases pass. |
-| Full conversion and DMG | Requires the integrated real-game browser run, disk-image verification, relocated launch and gameplay/audio verification. |
+| Full conversion and DMG | The real input browser run passed all six stages in 74.7 minutes on this M4 Pro while on battery with other workloads. The 7,012,570,468-byte image passes checksum/mount checks and strict signatures before and after native gameplay. Seven native checks pass with sound and zero viewer-relayed inputs. |
 
 Acceptance criteria are in
 [`tools/browser-builder/INTENT.md`](../tools/browser-builder/INTENT.md) and
@@ -53,7 +52,7 @@ The app contains its generated game assets in `Contents/Resources/game` and
 uses `~/Library/Application Support/SwitchRecomp/Super Mario Odyssey` for
 saves, graphics preferences, temporary game files and logs. It needs macOS 26
 and Apple Silicon. No Homebrew, .NET or Python installation is required to play
-the finished app. The actual generated artifact still needs verification. The generated app uses an ad-hoc signature, not Developer ID notarization; macOS may require an explicit Open Anyway approval in Privacy & Security.
+the finished app. The generated app uses an ad-hoc signature, not Developer ID notarization; macOS may require an explicit Open Anyway approval in Privacy & Security.
 
 ## Development checks
 
@@ -124,4 +123,23 @@ bun tools/browser-builder/tests/job-storage.mjs
 bun tools/browser-builder/tests/release-reuse.mjs --runtime /path/to/public-runtime-template
 ```
 
-The final real-input run observes HTTP metadata on both page and worker targets without retaining request bodies or query values. The static server has no upload endpoint. The whole browser-to-DMG and native gameplay checks remain the final release gate.
+The final real-input run observes HTTP metadata on both page and worker targets without retaining request bodies or query values. The static server has no upload endpoint. The real browser run observed 359 static GET requests and zero unexpected requests, observer errors, uploads or browser errors. No quota override was used. The actual downloaded image and native gameplay checks both passed.
+
+## Native gameplay and retained-source guard validation
+
+The native acceptance run used only the runtime and converted data copied from the actual browser-produced DMG. It verified 1,102.7 units of walking, a 127.6-unit jump followed by a grounded standing state, camera rotation, uncapped rendering and native gameplay audio. Its two-second warm sample measured 161.7 rendered FPS and 60.07 Hz simulation, with zero interpolation restore mismatches. Median frame interval was 5.59 ms, p95 9.59 ms and maximum 95.20 ms; this short sample is not a sustained-performance guarantee. The final compressed recording contains 61.1 seconds of H.264 720p60 video and native AAC stereo sound. Independent decoded-audio and sampled-frame reviews pass. This is headless native rendering, not a verification of final native-window presentation.
+
+The historical native shader cache omitted framebuffer Metal sources after compiling them. Retaining those sources causes the unchanged guard generator to emit 6,399 extra `_bf` rows, because it cannot find separate variant reflection files. The runtime specializes these functions on the existing base shader, so those rows do not alter allocation. The verifier preserves the historical byte-comparison difference and independently reruns the hash-pinned native analyzer on every actual file. It reproduces the full 6,411-row table, requires the original 12 effective base/geometry rows unchanged, and proves all 10,645 framebuffer variants have the same constant-buffer expressions and bounds as their bases. Arbitrary extra flags, missing flags, new unbounded accesses and altered analyzers are rejected.
+
+The local real-input guard regressions require an existing browser-generated game and the source-built runtime cache. Set `GUARD_COMPAT_GAME`, `GUARD_COMPAT_RUNTIME` and `GUARD_COMPAT_SOURCES` explicitly when using paths other than the canonical local proof layout. They remain outside the public-input-free CI suite.
+
+```sh
+bun test ./tools/browser-builder/pipeline/shaders/test/guard-compat.test.mjs
+bun tools/browser-builder/pipeline/shaders/test/compare-native.mjs \
+  --game /absolute/private/app/Contents/Resources/game \
+  --expected-chain 198729df4d5a \
+  --runtime-directory /absolute/runtime-build-cache \
+  --source-manifest /absolute/public-shader-tools/sources.json
+```
+
+First-launch compilation and scene loading can pause native input polling. The test waits on fresh native samples and gives startup key acknowledgements the remaining startup budget; active gameplay retains the normal short input path. `NativeKeyboard.press` accepts an optional `timeout` without adding a fixed key hold. Landing is verified by original floor height plus the standing state, since the native game retains a small downward gravity velocity on the floor.

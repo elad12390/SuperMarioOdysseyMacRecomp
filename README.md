@@ -1,5 +1,7 @@
 # SwitchRecomp
 
+Based on the upstream [bgyss/SwitchRecomp](https://github.com/bgyss/SwitchRecomp) project, with the native Odyssey runtime built from [seedds/nxnative](https://github.com/seedds/nxnative). Source pins, compatibility patches and dependency notices accompany the browser builder.
+
 This repository contains a draft specification set for a Nintendo Switch static recompilation project focused on preservation. The documents define scope, requirements, and research needs without distributing any proprietary assets or binaries. An exploratory Rust workspace now mirrors the intended pipeline shape.
 
 To play this local Apple Silicon build, open **`release/Super Mario Odyssey.app`**.
@@ -14,9 +16,7 @@ The [native Playwright-style harness](tools/game-harness/README.md) controls the
 
 A [browser-only release builder](docs/browser-release.md) is in development. It
 converts a user's own base-game NSP and keys locally through WASM and creates a
-standalone macOS DMG. The browser rewriter, shader translators and disk-image
-writer have real component proofs; the complete browser-to-gameplay release
-validation and GitHub Pages deployment remain pending.
+standalone macOS DMG. The complete browser-to-DMG path and the generated app's native gameplay, controls and audio are verified. GitHub Pages deployment remains pending.
 
 ## Contents
 - `specs/` contains the numbered specification series.

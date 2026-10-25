@@ -20,7 +20,7 @@ Acceptance examples:
 
 Current implementation status:
 - Browser ports, standalone source-built native runtime, app sealing and disk-image assembly are implemented; real component and scale proofs are recorded in `docs/browser-release.md`.
-- The integrated real-game browser-to-DMG and relocated native gameplay/audio checks remain the release gate. No public website has been deployed yet.
+- The integrated real-game browser-to-DMG run and all seven relocated native gameplay/audio checks pass. No public website has been deployed yet; deployment and live-site verification remain.
 - User explicitly selected all compilation/conversion in browser WASM on 2026-10-25.
 
 Human decision: macOS first-launch Metal shader compilation explicitly approved; extraction, ARM64 rewriting and shader translation remain browser WASM.
