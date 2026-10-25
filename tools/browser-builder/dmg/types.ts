@@ -9,6 +9,8 @@ export interface DmgEntry {
   /** Permissions, or permissions plus S_IFREG/S_IFDIR. No special mode bits. */
   mode: number;
   type?: "file" | "directory";
+  /** Optional conversion digest; resource sealing verifies it before signing. */
+  expectedSha256?: string;
   open?: () => Promise<DmgReader> | DmgReader;
 }
 /** write must consume/copy bytes before resolving: the buffer is reused. */
