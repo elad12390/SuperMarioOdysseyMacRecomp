@@ -224,3 +224,29 @@ The accepted full proof remains unchanged. Adding this verified icon gives an
 expected full manifest of 4,643 files and 5,527,949,302 bytes. This is a derived
 total, not a repeated full-RomFS test. No private icon bytes are tracked or
 included in the public tool bundle.
+
+## Canonical package restore and fresh source release
+
+The GitHub source release initially failed with NU1403 because the lock used
+Homebrew SDK library-packs bytes for Microsoft.NET.ILLink.Tasks 10.0.13. The
+signed NuGet.org package has content hash
+`40yrBMsLEcjixBR4G+FiUaBPvxXIPSKJ2OgSrbOZcmSDBda4Sb0k7BWrfDpIvn3IvvDzwOL/tEPa6gDQfh6aRw==`.
+`dotnet nuget verify --all` verifies its Microsoft author and NuGet repository
+signatures. The release builder now disables the SDK package feed and uses an
+isolated public-package cache. The lock is retained; an actual restore using
+the former hash still fails with NU1403.
+
+The complete source release and reuse path passes, including fresh extractor,
+Maxwell and SPIRV-Cross builds, native template/signatures, portability and the
+Pages archive audit. The rebuilt extractor passes the real WASM crypto and
+negative-input checks, cancellation and complete four-worker extraction of all
+4,643 files. Every output matches the previous verified file size/SHA-256 proof;
+full extraction measured 25,751 ms. The fresh shader regression passes 11 actual
+records and 65 outputs with the native functional comparison.
+
+Private evidence is under `tmp/odyssey/push-optimization/`; extractor evidence is
+`tmp/odyssey/browser-extractor/tests/canonical-source-release/evidence.json`.
+The local source release uses chain `8b86866155b2`; all 545 public tool files
+(93,078,340 bytes) pass the source/license/binary boundary audit. These are
+source-release and component proofs, separate from the earlier complete
+browser-to-DMG and native-gameplay recordings.

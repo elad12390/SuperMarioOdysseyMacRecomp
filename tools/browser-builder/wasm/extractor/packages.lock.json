@@ -18,7 +18,7 @@
         "type": "Direct",
         "requested": "[10.0.13, )",
         "resolved": "10.0.13",
-        "contentHash": "5Y5W4N5MD+7NRoRUG0aVUt1TaETXgTO6ItGWQ65cvRYXDzmsDZjsi6xmrVb8i7HWkOD8Fub0knuMyJLApbJ8wg=="
+        "contentHash": "40yrBMsLEcjixBR4G+FiUaBPvxXIPSKJ2OgSrbOZcmSDBda4Sb0k7BWrfDpIvn3IvvDzwOL/tEPa6gDQfh6aRw=="
       },
       "Microsoft.NET.Sdk.WebAssembly.Pack": {
         "type": "Direct",

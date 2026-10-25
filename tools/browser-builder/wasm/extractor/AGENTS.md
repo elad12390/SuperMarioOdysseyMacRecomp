@@ -9,3 +9,5 @@
   another invocation's live handles or terminate browsers with broad patterns.
 - Run actual NIST known-answer checks in WASM before private-input extraction;
   save their verified result alongside the real NSP extraction evidence.
+
+- Generate package locks from signed public NuGet packages with the SDK library-packs feed disabled. Homebrew may bundle different bytes at the same version. Verify a clean locked restore and the full source release build; a cached publish or reuse-only check does not cover this path. The release builder isolates its NuGet cache under ignored scratch.

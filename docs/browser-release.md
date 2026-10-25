@@ -145,6 +145,15 @@ bun run build:release
 bun run dev
 ```
 
+Release builds use an ignored NuGet cache at
+`tmp/odyssey/browser-release-tools/nuget-public-packages` and disable the SDK
+`library-packs` feed. This keeps Homebrew-rebuilt packages from shadowing the
+canonical signed packages at the same version. The extractor remains in locked
+restore mode. Its `Microsoft.NET.ILLink.Tasks` 10.0.13 lock uses the NuGet.org
+package verified by both Microsoft author and NuGet repository signatures. A
+wrong-hash restore must still fail; do not bypass the integrity check to repair
+a release.
+
 The Pages workflow can be dispatched manually. A push to `main` also runs it for changes to the workflow, browser-builder code or runtime patches. Markdown-only builder changes and unrelated commits do not trigger a full release.
 
 The SPIRV-Cross build requires Emscripten 6.0.13. Its version gate accepts both Homebrew's `6.0.13-git` and the official SDK's `6.0.13 (commit-hash)` banner; adjacent versions remain rejected. The SDK checkout and all 23 pinned Cross source/license hashes are checked separately.

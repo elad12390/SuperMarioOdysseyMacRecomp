@@ -9,6 +9,7 @@ import { apiChecks } from './api-checks.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../../../..');
 const work = path.join(root, 'tmp/odyssey/browser-shader-chain');
+const bundleDirectory = path.resolve(process.env.SHADER_BUNDLE ?? path.join(work, 'bundle'));
 const parallel = process.env.SHADER_PARALLEL === '1';
 const ownedProfile = path.join(work, process.env.SHADER_FULL === '1' ? 'stream-proof-profile' : parallel ? 'parallel-profile' : 'sample-profile');
 const fixture = JSON.parse(await readFile(path.join(work, 'fixtures.json'), 'utf8'));
@@ -21,7 +22,7 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/') { response.setHeader('Content-Type', 'text/html'); response.end('<!doctype html><title>Isolated browser shader chain proof</title>'); return; }
     const badBundle = url.pathname.startsWith('/bad-bundle/');
     const bundle = badBundle || url.pathname.startsWith('/bundle/');
-    const base = bundle ? path.join(work, 'bundle') : path.dirname(here);
+    const base = bundle ? bundleDirectory : path.dirname(here);
     const relative = bundle ? url.pathname.slice(badBundle ? 12 : 8) : url.pathname.slice(1);
     const resolved = path.resolve(base, relative);
     assert(resolved.startsWith(base + path.sep));

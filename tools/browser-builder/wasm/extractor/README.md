@@ -32,6 +32,13 @@ The host owns the job directory: stop all workers before deleting partial
 output. The isolated client adapter's `cancel()` handles nested termination and
 bounded cleanup of its owned root, including the pool ownership marker.
 
+Source releases use signed public NuGet packages with the SDK library-packs
+feed disabled and a dedicated ignored package cache. Keep the committed lock
+hashes; a Homebrew SDK can bundle different package bytes at the same version.
+For a manual publish, set `NUGET_PACKAGES` to
+`$PWD/tmp/odyssey/browser-release-tools/nuget-public-packages` from the repository
+root so an older global package cache cannot shadow the locked package.
+
 Release publication AOT-compiles the extractor and its managed dependencies to
 WASM using the installed .NET workload. The required linker preserves the
 extractor, LibHac and its net7.0 `System.Runtime` forwarding facade. The adapted

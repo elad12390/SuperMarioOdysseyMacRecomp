@@ -42,7 +42,10 @@ export async function buildTools({ outDir, reuseBuilt = false, reuseRewriterBund
     await cp(path.join(repoRoot, 'scripts/patches/nxnative-odyssey-sdk3.patch'), path.join(mirror, 'scripts/patches/nxnative-odyssey-sdk3.patch'));
     const temp = path.join(scratch, 'host-tmp');
     await mkdir(temp, { recursive: true });
-    const env = { ...process.env, TMPDIR: temp, EM_CACHE: path.join(scratch, 'cross-em-cache') };
+    // Do not consume SDK-repacked packages or a developer's global NuGet cache.
+    // Locked restores use the same signed public packages as the clean CI host.
+    const env = { ...process.env, TMPDIR: temp, EM_CACHE: path.join(scratch, 'cross-em-cache'),
+      NUGET_PACKAGES: path.join(scratch, 'nuget-public-packages'), DisableImplicitLibraryPacksFolder: 'true' };
     const jobs = [];
     async function run(label, args, additions = {}) {
       jobs.push({ label, args: args.map(arg => arg.replaceAll(mirror, '$SOURCE_MIRROR').replaceAll(scratch, '$RELEASE_SCRATCH')) });

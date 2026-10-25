@@ -13,6 +13,8 @@
     <WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
     <RunAOTCompilation Condition="'$(Configuration)' == 'Release'">true</RunAOTCompilation>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- SDK-bundled/Homebrew packages can differ from the signed NuGet package. -->
+    <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
     <!-- AOT requires the linker. Keep LibHac and its AES provider intact, including
          the net7.0 System.Runtime forwarding facade needed by the adapted DLL. -->
     <PublishTrimmed>true</PublishTrimmed>
