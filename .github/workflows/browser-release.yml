@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
-          brew install uv
+          brew install uv ffmpeg
           dotnet workload install wasm-tools --skip-manifest-update
           mkdir -p tmp/odyssey/browser-ci
           git clone --depth 1 --branch 6.0.13 https://github.com/emscripten-core/emsdk.git tmp/odyssey/browser-ci/emsdk

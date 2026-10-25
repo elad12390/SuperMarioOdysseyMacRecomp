@@ -5,6 +5,7 @@ import { createGameTest } from '../../game-harness/fixture';
 import { enterOpeningGameplay } from '../../game-harness/opening';
 import { validateTestPath } from '../../game-harness/manager';
 import type { NativeState } from '../../game-harness/protocol';
+import { assertAudibleAudio } from './audio-levels';
 
 // Only an app mounted/copied from the actual browser-produced DMG is a valid
 // input. The caller separately verifies that image and its resource signature.
@@ -28,6 +29,7 @@ const actions = [
   'Jump and land on native controller input',
   'Rotate the native camera',
   'Measure uncapped rendering and preview gameplay',
+  'Verify native game audio is audible',
 ];
 const test = await createGameTest('browser-generated-odyssey', {
   title: 'Browser WASM → native Odyssey',
@@ -117,6 +119,10 @@ try {
     assert.equal(after.timing?.interpolation.restoreMismatches, 0, 'Presentation interpolation must restore native actor state exactly');
     evidence.performance = { seconds, renders: after.frame - before.frame, renderRate: (after.frame - before.frame) / seconds, logicTicks: ticks(after) - ticks(before), before, after };
     await page.screenshot({ path: join(test.artifacts, 'gameplay.png') });
+  });
+  await test.step(actions[6]!, async () => {
+    await game.stop();
+    evidence.audio = await assertAudibleAudio(join(test.artifacts, 'native-audio-001.wav'));
   });
 } catch (error) { failure = error; }
 finally {
