@@ -1,6 +1,6 @@
 # Browser-only macOS release
 
-The source is published at [elad12390/SwitchRecomp](https://github.com/elad12390/SwitchRecomp).
+The source is published at [elad12390/SuperMarioOdysseyMacRecomp](https://github.com/elad12390/SuperMarioOdysseyMacRecomp).
 
 The release goal is a GitHub Pages website where the user selects their own
 Super Mario Odyssey base 1.0.0 NSP and console keys and downloads a standalone
@@ -15,6 +15,10 @@ assembly run locally in browser workers.
 
 ## Current verified state
 
+This repository now contains only the Odyssey browser builder, native runtime
+and harness. The unused generic Rust, specification, sample-title and AWS
+automation scaffolding has been removed.
+
 The complete local browser-to-gameplay path is verified. A real browser build produced a 7.01 GB DMG; its relocated app passed all seven native gameplay/audio checks. Public GitHub Pages deployment is the remaining release step.
 
 | Surface | Evidence |
@@ -28,7 +32,7 @@ The complete local browser-to-gameplay path is verified. A real browser build pr
 | Public static release | Complete ~100 MB public WASM bundle and a source-built ARM64 native template assemble with a matching shader-chain identity; no private game input is included. |
 | Native source loading | A real Odyssey MSL shader compiles through Metal with `preserveInvariance`, matching the existing offline precision requirement. |
 | Standalone launcher | Builds for ARM64 and resolves data from its own app bundle, with saves/settings in Application Support rather than this checkout. The actual relocated browser-generated app reaches Cap Kingdom with a fresh private save and responds to walking, jumping and camera controls. |
-| Full source regression | Formatting, strict workspace Clippy, `cargo test --workspace --locked` (78 tests) and both validation CLI cases pass. Browser unit checks include real tone/silence analysis; all 11 cases pass. |
+| Source checks | The website and native harness pass TypeScript checks. All 11 intake, provenance and real tone/silence cases pass, along with 18 disk-image cases. Native signature, portability and archive checks run against built release assets. |
 | Full conversion and DMG | The real input browser run passed all six stages in 74.7 minutes on this M4 Pro while on battery with other workloads. The 7,012,570,468-byte image passes checksum/mount checks and strict signatures before and after native gameplay. Seven native checks pass with sound and zero viewer-relayed inputs. |
 
 Acceptance criteria are in
@@ -83,7 +87,6 @@ assembled before a successful game conversion is possible.
 ```sh
 bun tools/browser-builder/tests/browser-intake.mjs
 sh tools/browser-builder/wasm/shaders/tests/prove.sh
-cargo test --workspace --target aarch64-apple-darwin -- --test-threads=1
 ```
 
 The shader proof reads private local fixtures only for validation. Those fixtures

@@ -61,7 +61,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --workspace --locked
           bun run --cwd tools/browser-builder typecheck
           bun run --cwd tools/browser-builder test
           (cd tools/browser-builder/dmg && bun install --frozen-lockfile && bun test ./test)

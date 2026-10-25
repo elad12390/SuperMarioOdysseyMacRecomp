@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "switchrecomp-browser-shaders",
+      "name": "super-mario-odyssey-mac-recomp-browser-shaders",
       "devDependencies": {
         "puppeteer-core": "24.43.1",
       },

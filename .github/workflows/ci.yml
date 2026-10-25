@@ -1,4 +1,4 @@
-name: CI
+name: Source checks
 
 on:
   push:
@@ -6,17 +6,27 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: test
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
-      - run: cargo run -p recomp-validation -- --out-dir artifacts/validation
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          name: validation-report
-          path: artifacts/validation
+          bun-version: 1.4.3
+      - name: Install dependencies
+        run: |
+          brew install ffmpeg
+          bun install --cwd tools/browser-builder --frozen-lockfile
+          bun install --cwd tools/browser-builder/signing --frozen-lockfile
+          bun install --cwd tools/browser-builder/dmg --frozen-lockfile
+          bun install --cwd tools/game-harness --frozen-lockfile
+      - name: Check the website and harness
+        run: |
+          bun run --cwd tools/browser-builder typecheck
+          bun run --cwd tools/game-harness check
+          bun run --cwd tools/browser-builder test
+          bun test ./tools/browser-builder/dmg/test

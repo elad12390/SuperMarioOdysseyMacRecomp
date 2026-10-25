@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "switchrecomp-browser-extractor",
+      "name": "super-mario-odyssey-mac-recomp-browser-extractor",
       "devDependencies": {
         "puppeteer-core": "24.43.1",
       },

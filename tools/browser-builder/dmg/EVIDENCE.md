@@ -111,18 +111,6 @@ returns **1**, with **INVALID** / **invalid checksum**. The acceptance wrapper
 records this expected failure as success in `tmp/odyssey/browser-dmg/corrupt.log`
 and `corrupt.status`. The image is never mounted or repaired.
 
-## Repository suite
-
-From repository root:
-
-```sh
-CARGO_TARGET_DIR="$PWD/tmp/odyssey/browser-dmg/cargo-target" CARGO_INCREMENTAL=0 cargo test --offline
-```
-
-Exit **0**, **78 tests passed, 0 failed** across 24 unit/integration/doc-test
-result groups. This is the existing synthetic workspace suite; no native game
-test or Player launch was run. Log: `tmp/odyssey/browser-dmg/cargo-test.log`.
-
 ## Artifact hashes
 
 SHA-256, also recorded in `tmp/odyssey/browser-dmg/SHA256SUMS`:
@@ -139,9 +127,7 @@ Runtime has zero packages. Dev dependencies and their exact versions are pinned
 in package.json/bun.lock. See README for primary format sources and API limits.
 
 Owned duplicate OPFS browser profiles and Bun/uv download caches were removed
-after verification. The temporary Cargo target (305 MiB, checked for its
-CACHEDIR.TAG and debug directory) was removed; the existing root target remains
-1.1 GiB. Retained downloads/evidence use about 4.0 GiB, primarily the deliberately
+after verification. Retained downloads/evidence use about 4.0 GiB, primarily the deliberately
 kept large DMG. `test/cleanup.ts` checks successful acceptance status and exact
 owned cache paths before removal. Cleanup log: `tmp/odyssey/browser-dmg/cleanup.log`.
 

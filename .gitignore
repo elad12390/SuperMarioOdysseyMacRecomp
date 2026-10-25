@@ -1,5 +1,3 @@
-/target/
-/out/
 /external/
 /tmp/
 /tools/game-harness/node_modules/
@@ -8,17 +6,29 @@
 /tools/browser-builder/**/bin/
 /tools/browser-builder/**/obj/
 /tools/browser-builder/dist/
-/.direnv/
-/.devenv/
-/.devenv.flake.nix
-/devenv.lock
 /game-data/
 /mario-odyssey/
 /source-dumps/
 /release/*.app/
-/config/title-hash-registry.toml
-/config/title-hash-tracking.log
 
 # Python cache
 __pycache__/
 *.pyc
+
+# Private game inputs and generated media
+*.nsp
+*.xci
+*.nca
+*.nso
+*.keys
+*.dmg
+*.mp4
+*.webm
+*.wav
+*.metallib
+*.app/
+
+# Preserve isolation of any existing developer caches or private legacy data
+/target/
+/out/
+/config/

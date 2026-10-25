@@ -11,7 +11,7 @@ const repositoryUrl = process.env.SWITCHRECOMP_REPOSITORY_URL;
 if (repositoryUrl) {
   if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repositoryUrl)) throw new Error('Use a complete GitHub repository URL for the source link.');
   const html = await Bun.file(resolve(out, 'index.html')).text();
-  await Bun.write(resolve(out, 'index.html'), html.replace('https://github.com/bgyss/SwitchRecomp', repositoryUrl));
+  await Bun.write(resolve(out, 'index.html'), html.replace('https://github.com/elad12390/SuperMarioOdysseyMacRecomp', repositoryUrl));
 }
 const result = await Bun.build({ entrypoints: [resolve(root, 'web/app.ts'), resolve(root, 'web/build-worker.ts')], outdir: out, target: 'browser', minify: true, sourcemap: 'external' });
 if (!result.success) { for (const log of result.logs) console.error(log); process.exit(1); }

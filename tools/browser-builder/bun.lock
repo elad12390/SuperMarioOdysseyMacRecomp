@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "switchrecomp-browser-builder",
+      "name": "super-mario-odyssey-mac-recomp-browser-builder",
       "dependencies": {
         "@fontsource/nunito": "5.2.7",
         "hash-wasm": "4.12.0",

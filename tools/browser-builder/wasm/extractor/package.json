@@ -1,5 +1,5 @@
 {
-  "name": "switchrecomp-browser-extractor",
+  "name": "super-mario-odyssey-mac-recomp-browser-extractor",
   "private": true,
   "type": "module",
   "scripts": { "test": "bun tests/browser-proof.mjs" },

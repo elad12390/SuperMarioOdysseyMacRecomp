@@ -1,89 +1,64 @@
-# SwitchRecomp
+# Super Mario Odyssey Mac Recomp
 
-Based on the upstream [bgyss/SwitchRecomp](https://github.com/bgyss/SwitchRecomp) project, with the native Odyssey runtime built from [seedds/nxnative](https://github.com/seedds/nxnative). Source pins, compatibility patches and dependency notices accompany the browser builder.
+Build **Super Mario Odyssey** into a standalone native app for Apple Silicon Macs.
+Select your own base-game NSP and console keys in the browser. Extraction, ARM64
+code conversion, shader translation and DMG creation run locally through WASM.
+Your game files and keys stay on your device.
 
-This repository contains a draft specification set for a Nintendo Switch static recompilation project focused on preservation. The documents define scope, requirements, and research needs without distributing any proprietary assets or binaries. An exploratory Rust workspace now mirrors the intended pipeline shape.
+**[Open the browser builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/)**
 
-To play this local Apple Silicon build, open **`release/Super Mario Odyssey.app`**.
-It opens the Player save. See [the release folder guide](release/README.md) and
-[controls and save slots](docs/local-odyssey-setup.md).
+The renamed public release is being verified. The complete local browser-to-DMG
+build and the generated app's native gameplay, controls and audio have passed.
 
-Prepared game files and Player saves are in `game-data/super-mario-odyssey/`.
-Your original dump is in `source-dumps/super-mario-odyssey/`. Generated recordings,
-logs, and automated test saves are under `tmp/`. These private files stay out of Git.
+## Build your game
 
-The [native Playwright-style harness](tools/game-harness/README.md) controls the game directly, waits on native menu text, and records annotated, compressed videos. Run `./scripts/record-odyssey-demo.command --window --120-video` for the complete scenario; renderer caps and Uncapped are in the game's Options -> Graphics menu.
+1. Open the builder on your Mac.
+2. Select your **Super Mario Odyssey base 1.0.0 NSP** and **prod.keys**. Add
+   **title.keys** if your dump requires it.
+3. Choose **Build my Mac version** and keep the tab open until it finishes.
+4. Download the DMG, open it, and copy **Super Mario Odyssey.app** to Applications.
 
-A [browser-only release builder](docs/browser-release.md) is in development. It
-converts a user's own base-game NSP and keys locally through WASM and creates a
-standalone macOS DMG. The complete browser-to-DMG path and the generated app's native gameplay, controls and audio are verified. GitHub Pages deployment remains pending.
+The app requires **Apple Silicon and macOS 26 or later**. Updates and other games
+are unsupported. Keep at least **20 GB of free disk space** for the build. The
+first complete build on this M4 Pro took about 75 minutes on battery; this is a
+local compilation process. macOS compiles the generated Metal shaders on first
+launch. The finished game needs no Homebrew, Python or .NET installation.
 
-## Contents
-- `specs/` contains the numbered specification series.
-- `crates/` holds the exploratory pipeline/runtime scaffolding.
-- `skills/` provides the Codex skill set used for validation workflows.
-- `ROADMAP.md` provides phased milestones and exit criteria.
-- `RESEARCH.md` lists research directions and required sources.
-- `docs/` contains development notes.
- - `docs/LEGAL-POLICY.md` defines legal use and asset separation rules.
- - `docs/static-recomp-skills.md` documents the Codex skill set and project-level validation templates.
+The game includes native sound, keyboard/controller input, uncapped rendering
+and an FPS counter. Frame limit and counter settings are together under
+**Options > Graphics**. Saves and graphics settings live in Application Support.
 
-## How to Use the Specs
-- Read `specs/README.md` for ordering.
-- Each spec starts as Draft and should be updated as research is completed.
-- Open questions are explicitly listed at the end of each spec.
-- Use `docs/SPECS-CHANGELOG.md` for the detailed, commit-level history of spec changes.
+## Develop and test
 
-## Contribution Notes
-- Do not add or link to proprietary assets, keys, or copyrighted binaries.
-- Keep inputs and outputs strictly separated.
-- When updating a spec, add a short rationale and keep acceptance criteria testable.
+- [Build and release guide](docs/browser-release.md)
+- [Native runtime and local player setup](docs/local-odyssey-setup.md)
+- [Native Playwright-style game harness](tools/game-harness/README.md)
 
-Legal and provenance policy:
-- Follow `docs/LEGAL-POLICY.md` for legal acquisition, asset separation, and prohibited content.
-- The exploratory Rust pipeline requires a validated `provenance.toml` describing
-  its inputs. The browser builder records per-user local provenance and verifies
-  the supported game/build and content integrity without uploading files or keys.
+The harness drives the native game directly, with separate Player and Tests
+profiles. Recorded tests include an action timeline, native sound and compressed
+video. The browser is the test viewer; game input goes directly to the native host.
 
-## Development
-- The dev environment is managed with Nix + devenv.
-- See `docs/DEVELOPMENT.md` for commands and sample usage.
+| Path | Purpose |
+| --- | --- |
+| tools/browser-builder | Website, browser WASM conversion and release tooling |
+| tools/browser-builder/runtime | Standalone ARM64 app template and launcher |
+| tools/game-harness | Native controls, assertions and recorded gameplay tests |
+| scripts/patches | Pinned Odyssey runtime compatibility patches |
+| docs | Odyssey build, runtime and input documentation |
 
-## Samples and Flow Docs
-- `samples/memory-image/` shows the memory image initialization flow (segment blob + lifted module).
-- `samples/validation/` contains non-proprietary validation artifact index templates.
-- `docs/static-recompilation-flow.md` outlines a hypothetical macOS static recompilation flow and verification pipeline (see the Real XCI intake section for external-tool usage).
-- `docs/xci-intake.md` documents the XCI intake workflow and mock extractor format.
-- `docs/validation-artifacts.md` defines validation artifact indexing, workflows, and dependencies.
-- `docs/run-manifest-schema.md` and `docs/artifact-index-schema.md` document automation/validation metadata schemas.
-- `docs/validation-video.md` describes the hash-based video validation workflow.
-- `docs/title-hash-ingest.md` documents hash-based title/data ingest and local decoder-ring files.
-- `scripts/capture-validation.sh`, `scripts/capture-video-macos.sh`, `scripts/capture_video.sh`, and `scripts/validate_artifacts.sh` provide capture and validation helpers.
-- `cargo run -p recomp-cli -- automate --config <automation.toml>` runs the local end-to-end automation loop.
-- `scripts/ingest_hashed_title.sh` hashes title/data paths for private local workspaces.
-- `scripts/rewrite_title_refs_in_history.sh` rewrites commit-message title references to hash ids.
+Game dumps, keys, generated apps, saves, captures and recordings are excluded
+from Git. Local test and build artifacts belong under tmp/odyssey/.
 
-## Back Pressure Hooks
-These hooks add fast, consistent feedback to keep the repo autonomous and reduce review churn. Hooks are defined in `.pre-commit-config.yaml` and can be run with `prek` (preferred) or `pre-commit`.
+## Credits and licenses
 
-- Install hooks: `prek install` or `pre-commit install`.
-- Run on demand: `prek run --all-files` or `pre-commit run --all-files`.
-- macOS note: the Nix dev shell ships `prek` only (to avoid Swift/.NET builds); install `pre-commit` separately if you need it.
+The native runtime comes from [seedds/nxnative](https://github.com/seedds/nxnative),
+with the source revision and compatibility patches pinned in this repository.
+The browser builder uses LibHac, Ryujinx's shader translator, SPIRV-Cross,
+Pyodide, Capstone and LZ4. Their source recipes and notices accompany the public
+tools and app template.
 
-Configured hooks:
-- Pre-commit: `trailing-whitespace`, `end-of-file-fixer`, `check-merge-conflict`, `check-yaml`, `check-toml`, `check-json`, `check-added-large-files`, `detect-private-key`, `check-executables-have-shebangs`, `check-symlinks`, `check-case-conflict`, `cargo fmt --check`.
-- Pre-push: `cargo clippy --workspace --all-targets --all-features -D warnings`, `cargo test --workspace`.
-
-## Specs Update Log
-- Detailed commit-by-commit spec history: `docs/SPECS-CHANGELOG.md`.
-- 2026-02-16: Ingested long-tail LLM decomp findings into `SPEC-210`, `SPEC-250`, and `SPEC-260`.
-- 2026-02-07: Migrated title references to hash IDs, updated validation details, and renamed `SPEC-200` to `SPEC-200-TITLE-A24B9E807B456252-FIRST-LEVEL.md`.
-- 2026-02-04: Expanded XCI intake and validation artifact plumbing across `SPEC-100`, `SPEC-180`, `SPEC-190`, and `SPEC-200`.
-- 2026-02-03: Added automation loop and orchestration/security spec set (`SPEC-210` through `SPEC-260`) and related plan/status updates.
-- 2026-02-02: Added decode/CFG and runtime-memory specs (`SPEC-045`, `SPEC-046`, `SPEC-047`, `SPEC-160`, `SPEC-170`) plus XCI/video milestone specs (`SPEC-180`, `SPEC-190`, `SPEC-200`).
-- 2026-01-31 to 2026-02-01: Added and refined homebrew end-to-end intake/extraction/runtime/asset specs (`SPEC-120` through `SPEC-150`).
-- 2026-01-30: Added manifest integrity specs (`SPEC-095`, `SPEC-096`) and updated charter/validation/title-selection details.
-- 2026-01-29: Bootstrapped the initial spec series (`SPEC-000` through `SPEC-110`) and iterative ISA/services/graphics/timing scaffold updates.
-
-## Status
-Early draft. Expect frequent revisions as research progresses.
+This project originated from [bgyss/SwitchRecomp](https://github.com/bgyss/SwitchRecomp).
+The generic specification framework and exploratory Rust workspace have been
+removed. This repository is dedicated to Super Mario Odyssey on Apple Silicon.
+Original copyright notices and applicable [MIT](LICENSE-MIT) and
+[Apache 2.0](LICENSE-APACHE) license texts are retained.

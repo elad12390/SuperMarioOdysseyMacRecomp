@@ -1,14 +1,9 @@
 ## Summary
--
 
-## Files Touched
--
+Describe the Odyssey builder, runtime or harness change.
 
-## Testing (required)
-- `cargo test`
-- Result:
+## Validation
 
-If tests are skipped, include explicit approval and the reason.
-
-## Open Questions
--
+List the commands and results that exercise the changed behavior. For release
+changes include the browser build, generated app and gameplay evidence that was
+actually verified. Identify any remaining verification.

@@ -38,10 +38,9 @@ Tests-only passive lunaGameData telemetry queries the original GameDataFile for 
 
 ## Checks
 
-Run the full Rust workspace suite and native host suite, then the optional private golden inputs:
+Run the native host and harness checks, then the optional private golden inputs:
 
 ```sh
-cargo test --workspace --target aarch64-apple-darwin -- --test-threads=1
 DM_GAMES_DIR="$PWD/game-data/super-mario-odyssey/profile" make -C external/nxnative/dm/host/tests GAME=0100000000010000 run
 external/nxnative/dm/host/tests/build/t_smo_lunakit_tape tmp/odyssey/tsv-replay/cap.bin tmp/odyssey/tsv-replay/cascade.bin
 TMPDIR="$PWD/tmp/odyssey/tsv-replay" external/nxnative/dm/host/tests/build/t_smo_lunakit_runtime --goldens tmp/odyssey/tsv-replay/cap.bin tmp/odyssey/tsv-replay/cascade.bin
