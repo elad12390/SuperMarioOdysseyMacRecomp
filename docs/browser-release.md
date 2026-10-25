@@ -19,7 +19,7 @@ This repository now contains only the Odyssey browser builder, native runtime
 and harness. The unused generic Rust, specification, sample-title and AWS
 automation scaffolding has been removed.
 
-The complete local browser-to-gameplay path is verified. A real browser build produced a 7.01 GB DMG; its relocated app passed all seven native gameplay/audio checks. Public GitHub Pages deployment is the remaining release step.
+The [public builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/) is deployed and verified. Checks cover its UI, every hosted tool/runtime file and real browser shader conversion. Separately, the complete local browser-to-gameplay path produced a 7.01 GB DMG whose relocated app passed all seven native gameplay/audio checks.
 
 | Surface | Evidence |
 | --- | --- |
@@ -29,7 +29,7 @@ The complete local browser-to-gameplay path is verified. A real browser build pr
 | Shader WASM | Real vertex, pixel and compute outputs match native SPIR-V, metadata and MSL. All three geometry shaders pass all five topology/reader variants. The corrected compiler matches the native depth cases. The actual app contains all 39,185 required Metal variants; all 66,422 declared shader/profile files pass size and hash verification, 27,228 available native sources match exactly, and all 27,228 reflection records match canonically. Retained framebuffer guards also pass fresh native analysis. |
 | Browser app sealing | A real browser-updated resource seal passes `codesign --verify --deep --strict` on a mounted DMG and a relocated app. The 70,000-file scale proof seals a 17.3 MB resource catalog, produces a real 333 MB DMG and passes the same macOS checks. Unsealed/tampered resources fail verification. |
 | Disk-image writer | A real streamed 4.30 GB HFSX/UDIF image passes `hdiutil` and filesystem verification, including a single file above 4 GiB. |
-| Public static release | Complete ~100 MB public WASM bundle and a source-built ARM64 native template assemble with a matching shader-chain identity; no private game input is included. |
+| Public static release | All 1,582 public tool/runtime files (~139 MB) pass size/hash checks on the deployed site. The source-built ARM64 template and WASM tools share chain 196f909f4065; no private game input is included. |
 | Native source loading | A real Odyssey MSL shader compiles through Metal with `preserveInvariance`, matching the existing offline precision requirement. |
 | Standalone launcher | Builds for ARM64 and resolves data from its own app bundle, with saves/settings in Application Support rather than this checkout. The actual relocated browser-generated app reaches Cap Kingdom with a fresh private save and responds to walking, jumping and camera controls. |
 | Source checks | The website and native harness pass TypeScript checks. All 11 intake, provenance and real tone/silence cases pass, along with 18 disk-image cases. Native signature, portability and archive checks run against built release assets. |
@@ -107,7 +107,7 @@ notices and reproducible source pins must accompany the hosted tools.
 
 Source is published in the independent `elad12390/SuperMarioOdysseyMacRecomp`
 repository, with no upstream fork relationship. GitHub Actions builds and
-deploys the public tools; live verification of the renamed release is pending.
+deploys the public tools; the renamed release passes live verification.
 The repository and website include the [project disclaimer](../DISCLAIMER.md):
 no original game or keys are provided, piracy is not condoned, and users must
 supply files they are legally entitled to use.
@@ -155,3 +155,13 @@ bun tools/browser-builder/pipeline/shaders/test/compare-native.mjs \
 ```
 
 First-launch compilation and scene loading can pause native input polling. The test waits on fresh native samples and gives startup key acknowledgements the remaining startup budget; active gameplay retains the normal short input path. `NativeKeyboard.press` accepts an optional `timeout` without adding a fixed key hold. Landing is verified by original floor height plus the standing state, since the native game retains a small downward gravity velocity on the floor.
+
+## Published website verification
+
+The release at [SuperMarioOdysseyMacRecomp](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/) was built and deployed by [Browser release 40205394389](https://github.com/elad12390/SuperMarioOdysseyMacRecomp/actions/runs/40205394389).
+
+The live check verifies all 1,582 files (138,757,520 bytes), manifest hashes, pinned runtime source and the matching public chain `196f909f4065`. Real local malformed-file selection is rejected without a download. Desktop and mobile captures have no horizontal overflow; the final screenshots are byte-identical to the visually reviewed build, including the readable no-game and anti-piracy notices. Observed requests are static GET downloads with no uploads.
+
+The hosted shader regression consumes 11 local shader records without uploading them. It produces 65 files and requires all 63 functional source/reflection/table hashes to match the native-equivalent local reference, including geometry variants and a 31,542,483-byte streamed source export. Identity-only metadata is compared separately. Both a cold hosted load and a follow-up using the isolated verification browser's own asset cache pass.
+
+The complete private NSP-to-DMG/native-gameplay run used local reference chain `198729df4d5a`; the final public bundle has compiler fingerprint `196f909f4065`. These are separate validation stages. The hosted regression establishes functional output parity for its records; the full game run remains the separately recorded local acceptance evidence.

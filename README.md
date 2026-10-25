@@ -2,13 +2,15 @@
 
 Build **Super Mario Odyssey** into a standalone native app for Apple Silicon Macs.
 Select your own base-game NSP and console keys in the browser. Extraction, ARM64
-code conversion, shader translation and DMG creation run locally through WASM.
-Your game files and keys stay on your device.
+code conversion and shader translation run locally in browser WASM. The browser
+also assembles your DMG. Your game files and keys stay on your device.
 
 **[Open the browser builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/)**
 
-The renamed public release is being verified. The complete local browser-to-DMG
-build and the generated app's native gameplay, controls and audio have passed.
+The public builder is deployed. Verification covers every hosted tool/runtime
+file and a browser shader-conversion regression. A complete local browser-to-DMG
+build and all seven native gameplay/audio checks also pass. See the
+[verification details](docs/browser-release.md#current-verified-state).
 
 ## No game included
 

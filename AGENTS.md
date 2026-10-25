@@ -37,6 +37,10 @@ focused on this game and the browser-to-DMG workflow.
 - Keep generated artifacts under tmp/odyssey/. Keep persistent Player data in
   its existing game directory or Application Support profile.
 
+- Keep the README and builder's no-piracy, no-game-included and Nintendo
+  non-affiliation notices visible. Never describe a disclaimer as legal clearance
+  or promise that the project has no legal risk.
+
 ## Development and checks
 
 Use Bun. Full source-release commands and required SDK versions are documented
