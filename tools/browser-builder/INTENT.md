@@ -18,9 +18,9 @@ Acceptance examples:
 5. Observe network during a real run: static tool/runtime downloads only; no upload of game content, keys, save or generated output.
 6. GitHub CI publishes a functional static site and reproducible public tool bundle containing no private inputs.
 
-Current evidence:
-- Existing release app only resolves a launcher in this checkout; it is not a standalone distribution.
-- Existing pipeline invokes native .NET, Python, spirv-cross and Apple Metal tools. Browser ports are required; no current browser conversion path exists.
+Current implementation status:
+- Browser ports, standalone source-built native runtime, app sealing and disk-image assembly are implemented; real component and scale proofs are recorded in `docs/browser-release.md`.
+- The integrated real-game browser-to-DMG and relocated native gameplay/audio checks remain the release gate. No public website has been deployed yet.
 - User explicitly selected all compilation/conversion in browser WASM on 2026-10-25.
 
 Human decision: macOS first-launch Metal shader compilation explicitly approved; extraction, ARM64 rewriting and shader translation remain browser WASM.

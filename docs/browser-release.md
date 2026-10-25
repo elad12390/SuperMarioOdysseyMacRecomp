@@ -22,12 +22,12 @@ playable DMG are not delivered yet.
 | Extraction WASM | Real 5.61 GB NSP extraction and NCA integrity checks pass; all RomFS files and the app icon match the local native oracle. |
 | ARM64 rewriting WASM | All three modules and their 18 binary/TSV outputs match the original native pipeline. |
 | Shader WASM | Real vertex, pixel and compute outputs match native SPIR-V, metadata and MSL. All three geometry shaders pass all five topology/reader variants. The corrected compiler matches the native depth cases; final full-library acceptance is pending. |
-| Browser app sealing | A real browser-updated resource seal passes `codesign --verify --deep --strict` on a mounted DMG and a relocated app. Unsealed/tampered resources fail verification. |
+| Browser app sealing | A real browser-updated resource seal passes `codesign --verify --deep --strict` on a mounted DMG and a relocated app. The 70,000-file scale proof seals a 17.3 MB resource catalog, produces a real 333 MB DMG and passes the same macOS checks. Unsealed/tampered resources fail verification. |
 | Disk-image writer | A real streamed 4.30 GB HFSX/UDIF image passes `hdiutil` and filesystem verification, including a single file above 4 GiB. |
 | Public static release | Complete ~100 MB public WASM bundle and a source-built ARM64 native template assemble with a matching shader-chain identity; no private game input is included. |
 | Native source loading | A real Odyssey MSL shader compiles through Metal with `preserveInvariance`, matching the existing offline precision requirement. |
 | Standalone launcher | Builds for ARM64 and resolves data from its own app bundle, with saves/settings in Application Support rather than this checkout. Gameplay validation remains pending. |
-| Full source regression | `cargo test --workspace --target aarch64-apple-darwin -- --test-threads=1` passes. |
+| Full source regression | Formatting, strict workspace Clippy, `cargo test --workspace --locked` (78 tests) and both validation CLI cases pass. Browser unit checks include real tone/silence analysis; all 11 cases pass. |
 | Full conversion and DMG | Requires the integrated real-game browser run, disk-image verification, relocated launch and gameplay/audio verification. |
 
 Acceptance criteria are in
@@ -111,7 +111,7 @@ bun tools/browser-builder/tests/play-generated.ts --app /absolute/private/test/p
 
 Both commands are test tooling only. Run them as background jobs and keep their evidence under `tmp/odyssey/`. The first drives the actual static website in the dedicated isolated headless browser, downloads the completed DMG, and retains hashes/progress/network metadata. It accepts an optional explicit `--test-quota-gib` diagnostic override, which is recorded in the result and is not used by the current full run. Chromium may report a privacy-limited 10 GiB storage estimate even with a larger actual quota; the product does not reject valid builds based on that estimate. Keep at least 20 GB free and let actual OPFS writes enforce quota.
 
-The native test uses `createGameTest`, private save/settings paths, direct native controller IPC and the runtime/data from the generated app. It produces the standard compressed video with native audio and action timeline, including failure/Not run states. It runs headless, so this evidence does not establish final native-window presentation correctness.
+The native test uses `createGameTest`, private save/settings paths, direct native controller IPC and the runtime/data from the generated app. It produces the standard compressed video with native audio and action timeline, including failure/Not run states. Before the ending card, its explicit audio step stops native capture and measures the real WAV through ffmpeg. It rejects peak levels at or below -60 dB or mean levels at or below -75 dB; real generated tone/silence regressions exercise this gate. The finalized MP4 also needs audio-stream and level verification. The test runs headless, so this evidence does not establish final native-window presentation correctness.
 
 ## Converter corrections and storage lifecycle
 
