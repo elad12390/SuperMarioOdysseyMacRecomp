@@ -1,5 +1,56 @@
 # Browser resource seal: independently verified
 
+## 70,000-file real-scale regression (2026-10-25)
+
+The production failure `Updated CodeResources exceeds metadata bound` was
+reproduced in the actual browser before the fix (scale/red.log). The only
+production change raises the generated OUTPUT CodeResources ceiling from 8 MiB
+to 64 MiB. Input envelope/parser limits remain 8 MiB; Mach-O, CodeDirectory,
+Info.plist and all signature-layout checks are unchanged. This is a fixed
+ceiling with approximately four times the observed 70k envelope size, rather
+than a bound coupled to multi-GB game payload size.
+
+`bun run ./test/scale.ts` uses the immutable public template at:
+`tmp/odyssey/browser-release-tools/runtime-cache/b4d1805e2c14d937a7cfe0a185b97a9c214bcc9c67102d49fbe6a6a34167d23e/public`.
+Every published file is checked against its manifest before sealing. Real
+headless-shell browser SHA-1/SHA-256 WASM hashes 70,000 deterministic one-byte
+ordinary files through sealApp, followed by the existing browser DMG writer.
+
+| Measurement | Observed |
+| --- | ---: |
+| Private synthetic files | 70,000 |
+| Public template files | 18 |
+| Total output files | 70,018 |
+| CodeResources XML bytes | 17,296,042 |
+| Sealing time | 696.1 ms |
+| Browser DMG write time | 7,379.2 ms |
+| DMG bytes | 332,875,108 |
+| Maximum private source read buffer | 1 byte |
+| Native mounted private-file count | 70,000 |
+| hdiutil verify / readonly attach / deep-strict codesign / detach | 0 / 0 / 0 / 0 |
+
+The mounted XML byte count and SHA-256 equal the exact browser-produced XML.
+Only the launcher's existing resource digest slot changes (offsets 53851..53882
+for this template); original code, nested host and all signature layouts remain
+unchanged. No app, Launcher, host, GPU or Player invocation occurred.
+
+Retained hashes:
+
+- XML: `a20eefd2d67096252c198b597650ae1615f9dbc5e7fd7d0f6e87f19a39d8556d`
+- DMG: `36bc7dd66bad4230a90d7f4a6bd0cee6a288c378529b6975d0636def2fe33480`
+- Original Launcher: `c6f20a588373194e8b19bb44c6e46c5399e8c59f7f857b8629261edffdf862ee`
+- Sealed Launcher: `536d91fd59d8324f0b4a275942d68fc050dcd8efe4c4da142f53c92404cf9cbf`
+- Manifest: `67f38507921a74d6bdd39823c42ce79732c6beff0b41243115566767a23cba5b`
+
+All raw browser/native outputs, captured PIDs and statuses are in
+`tmp/odyssey/browser-signing/scale/`. The owned OPFS browser profile and downloaded
+image were removed after proof, and the disk was detached. No private game run
+was repeated. Existing malformed-signature/XML, tamper, stream/cancel negatives
+remain enforced; an added test proves the input envelope still rejects above
+8 MiB before opening its reader. No commit was made for this fix.
+
+## Earlier small-resource proof
+
 Verified 2026-10-25 using the actual public native template and an isolated
 HeadlessChrome/154.0.8037.92 browser. No Launcher, dmhost, game or desktop window
 was executed/opened. Native commands only verified and mounted output.

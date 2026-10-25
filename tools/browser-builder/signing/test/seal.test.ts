@@ -87,3 +87,10 @@ test("XML insertion rejects malformed entities, duplicate keys and unbalanced co
   expect(() => parseEnvelope(xml.slice(0, -15))).toThrow();
   expect(() => parseEnvelope(xml.replace('<string>cdhash H"', '<string>&unknown;cdhash H"'))).toThrow();
 });
+
+test("trusted input-envelope cap remains 8 MiB and rejects before opening", async () => {
+  let opened=false;
+  const changed=entries.map(e=>e.path.endsWith("/_CodeSignature/CodeResources")?{...e,size:8*1024*1024+1,open:()=>{opened=true;throw Error("must not open oversized input");}}:e);
+  await expect(sealApp(changed,{appName})).rejects.toThrow(/metadata exceeds bounded limit/);
+  expect(opened).toBe(false);
+});

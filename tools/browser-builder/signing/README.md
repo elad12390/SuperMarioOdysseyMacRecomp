@@ -27,8 +27,11 @@ reads them again. Keep source files immutable between those passes.
 
 ## Exact operation
 
-1. Read bounded signing metadata: Launcher (maximum 16 MiB), CodeResources
-   (8 MiB), and Info.plist (1 MiB). Game payloads are not buffered.
+1. Read bounded signing metadata: Launcher (maximum 16 MiB), input CodeResources
+   (8 MiB), and Info.plist (1 MiB). Game payloads are not buffered. The generated
+   output envelope has a separate **64 MiB** ceiling: the 70,000-file regression
+   produces 17,296,042 bytes, so 8 MiB cannot represent real game file counts.
+   The input parser and all Mach-O/signature bounds remain unchanged.
 2. Require a thin little-endian ARM64 ALL executable, CodeDirectory v0x20400,
    flags exactly CS_ADHOC, SHA-256 type 2 / hash size 32 / page exponent 14,
    exactly three special slots and one primary CodeDirectory. Reject alternate
@@ -99,6 +102,12 @@ Evidence is under `tmp/odyssey/browser-signing/`: browser.json, worker.js,
 native-verify.log, macos-results.json and individual verifier command records.
 The actual browser-created image is downloads/browser-sealed.dmg. Details and
 SHA-256 hashes are in EVIDENCE.md.
+
+The real 70k-file scale regression is `bun run ./test/scale.ts`. It uses the
+current cached public template, real browser hash-wasm, the existing browser DMG
+writer and native readonly deep/strict verification. Added files are one byte
+each; the ~333 MB image is filesystem overhead. Evidence is retained under
+`tmp/odyssey/browser-signing/scale/`; the owned image and profile are removed.
 
 ## Sources and notices
 

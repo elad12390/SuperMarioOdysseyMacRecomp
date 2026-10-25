@@ -83,7 +83,9 @@ export async function sealApp(entries:DmgEntry[], options:SealOptions):Promise<D
   for(const path of parsed.first.keys())if(!seen.has(path))throw Error(`Missing originally sealed resource: ${path}`);
   for(const path of parsed.second.keys())if(path.startsWith("Resources/")&&!seen.has(path))throw Error(`Missing originally sealed resource: ${path}`);
   additions.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
-  const updated=encode.encode(insertEnvelope(xml,parsed,additions));if(updated.length>8*1024*1024)throw Error("Updated CodeResources exceeds metadata bound");
+  // A ~70k-file title needs well over 8 MiB for two resource-hash dictionaries.
+  // Keep the trusted input-envelope/parser and all Mach-O bounds unchanged.
+  const updated=encode.encode(insertEnvelope(xml,parsed,additions));if(updated.length>64*1024*1024)throw Error("Updated CodeResources exceeds metadata bound (64 MiB)");
   const patched=launcher.slice();patched.set(digest(updated),layout.resourceDigestOffset);signal?.throwIfAborted();
   options.progress?.({phase:"sealed",path:envelope.path,hashedBytes,totalBytes,filesDone,totalFiles:resources.length});
   return entries.map(e=>e===executable?entry(e.path,patched,e.mode):e===envelope?entry(e.path,updated,e.mode):e);
