@@ -14,6 +14,12 @@
         "resolved": "0.19.0",
         "contentHash": "7uMUGFpO2V0XJowS5/NjX6qlAlO94dQhLvxNdF3VhW36BXkoHCJPxTzL9r0U4p8w0jKm+9oAUF6XriWrAbIrsw=="
       },
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "5Y5W4N5MD+7NRoRUG0aVUt1TaETXgTO6ItGWQ65cvRYXDzmsDZjsi6xmrVb8i7HWkOD8Fub0knuMyJLApbJ8wg=="
+      },
       "Microsoft.NET.Sdk.WebAssembly.Pack": {
         "type": "Direct",
         "requested": "[10.0.13, )",

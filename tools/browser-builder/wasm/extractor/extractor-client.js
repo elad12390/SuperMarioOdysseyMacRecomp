@@ -1,6 +1,6 @@
 const JOB_NAME = /^[a-zA-Z0-9_-]{1,80}$/;
 
-export function createExtractorJob({ nsp, prodKeys, titleKeys, mode = 'full', jobId = crypto.randomUUID(), onProgress = () => {} }) {
+export function createExtractorJob({ nsp, prodKeys, titleKeys, mode = 'full', workers, jobId = crypto.randomUUID(), onProgress = () => {} }) {
   if (!JOB_NAME.test(jobId)) throw new Error('Invalid extraction job ID.');
   const worker = new Worker(new URL('./extractor-worker.js', import.meta.url), { type: 'module' });
   let rejectJob;
@@ -27,7 +27,7 @@ export function createExtractorJob({ nsp, prodKeys, titleKeys, mode = 'full', jo
       try { await jobs.removeEntry(jobId, { recursive: true }); return; }
       catch (error) {
         if (error.name === 'NotFoundError') return;
-        if (attempt === 19) throw error;
+        if (attempt === 99) throw error;
         await new Promise(r => setTimeout(r, 50));
       }
     }
@@ -53,7 +53,7 @@ export function createExtractorJob({ nsp, prodKeys, titleKeys, mode = 'full', jo
       reject(Object.assign(new Error('The browser extraction worker failed to load or run.'), { code: 'WORKER_FAILED' }));
     };
     prepared.then(outputDirectory => {
-      if (!settled) worker.postMessage({ type: 'extract', jobId, nsp, prodKeys, titleKeys, outputDirectory, mode });
+      if (!settled) worker.postMessage({ type: 'extract', jobId, nsp, prodKeys, titleKeys, outputDirectory, mode, workers });
     }).catch(async error => {
       if (settled) return;
       settled = true; worker.terminate();

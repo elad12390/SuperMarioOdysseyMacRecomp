@@ -60,4 +60,15 @@
       <ReferenceCopyLocalPaths Include="$(BrowserLibHacPath)" DestinationSubDirectory="" />
     </ItemGroup>
   </Target>
+  <!-- The scratch DLL does not match the original NuGet runtime-asset path.
+       Opt it into the SDK's supported linker input metadata, and preserve its
+       contents exactly after the three AES factory adaptations. -->
+  <Target Name="LinkBrowserLibHac" BeforeTargets="_ComputeManagedAssemblyToLink">
+    <ItemGroup>
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Filename)' == 'LibHac'">
+        <PostprocessAssembly>true</PostprocessAssembly>
+        <TrimMode>copy</TrimMode>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>

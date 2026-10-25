@@ -11,16 +11,20 @@
     <WasmEnableHotReload>false</WasmEnableHotReload>
     <WasmEnableSIMD>true</WasmEnableSIMD>
     <WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
+    <RunAOTCompilation Condition="'$(Configuration)' == 'Release'">true</RunAOTCompilation>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <!-- LibHac targets net7.0 and needs the System.Runtime forwarding facade.
-         Keep the verified dependency graph intact in the public WASM bundle. -->
-    <PublishTrimmed>false</PublishTrimmed>
+    <!-- AOT requires the linker. Keep LibHac and its AES provider intact, including
+         the net7.0 System.Runtime forwarding facade needed by the adapted DLL. -->
+    <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
+  <ItemGroup>
+    <TrimmerRootAssembly Include="BrowserExtractor;LibHac;System.Runtime" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibHac" Version="[0.19.0]" GeneratePathProperty="true" />
     <PackageReference Include="BouncyCastle.Cryptography" Version="[2.6.2]" />
     <PackageReference Include="Mono.Cecil" Version="[0.11.6]" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="all" />
-    <Content Include="extractor.js;browser-io.js;extractor-worker.js;extractor-client.js"
+    <Content Include="extractor.js;browser-io.js;extractor-worker.js;extractor-client.js;romfs-pool.js"
              Link="wwwroot/%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="THIRD-PARTY-NOTICES.md" Link="wwwroot/THIRD-PARTY-NOTICES.md"

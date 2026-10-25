@@ -1,4 +1,5 @@
 import * as io from './browser-io.js';
+import { checkPartition, copyRomfs } from './romfs-pool.js';
 
 let runtime;
 let busy = false;
@@ -68,20 +69,26 @@ async function createOutput(root, path) {
 
 // Call this from the shared pipeline's dedicated worker. The only downloads are
 // static .NET runtime/tool assets. Selected Files are never fetched or uploaded.
-export async function run({ nsp, prodKeys, titleKeys, outputDirectory, signal, mode = 'full' }, progress = () => {}) {
+export function run(options, progress = () => {}) { return extract(options, progress); }
+export function runPartition(options, partition, progress = () => {}) { return extract({ ...options, workers: 1 }, progress, partition); }
+
+async function extract({ nsp, prodKeys, titleKeys, outputDirectory, signal, mode = 'full', workers = 4 }, progress, partition) {
   if (busy) throw new ExtractionError('BUSY');
   if (typeof FileReaderSync === 'undefined' || !(nsp instanceof File) || !(prodKeys instanceof File) ||
       !outputDirectory || !['full', 'exefs', 'probe'].includes(mode) || prodKeys.size > io.CHUNK_SIZE ||
       (titleKeys && (!(titleKeys instanceof File) || titleKeys.size > io.CHUNK_SIZE)))
     throw new ExtractionError('INVALID_INPUT');
   // Never clobber existing job data. Caller owns this fresh directory.
-  for await (const _ of outputDirectory.keys()) throw new ExtractionError('OUTPUT_NOT_EMPTY');
+  if (!Number.isSafeInteger(workers) || workers < 1 || workers > 4) throw new ExtractionError('INVALID_INPUT');
+  if (partition) await checkPartition(outputDirectory, partition);
+  else for await (const _ of outputDirectory.keys()) throw new ExtractionError('OUTPUT_NOT_EMPTY');
   busy = true;
   let api;
   let handle;
   const createdRoots = new Set();
   const files = [];
   let bytesWritten = 0;
+  let parallelIo, partitionOrder = -1, romfsIndex = 0;
   const checkCanceled = () => { if (signal?.aborted) throw new ExtractionError('CANCELED'); };
   try {
     checkCanceled();
@@ -100,10 +107,19 @@ export async function run({ nsp, prodKeys, titleKeys, outputDirectory, signal, m
     if (mode !== 'probe') {
       for (let next = api.NextFile(); next; next = api.NextFile()) {
         const file = JSON.parse(next);
+        partitionOrder++;
+        if (partition && (!file.path.startsWith('RomFS/') || romfsIndex++ % partition.count !== partition.index)) continue;
         const parts = safePath(file.path);
         if (!Number.isSafeInteger(file.size) || file.size < 0) throw new ExtractionError('EXTRACT_FAILED');
         createdRoots.add(parts[0]);
         checkCanceled();
+        const concurrency = Math.min(workers, Math.max(1, (navigator.hardwareConcurrency || 4) - 2));
+        if (!partition && mode === 'full' && file.path.startsWith('RomFS/') && concurrency > 1) {
+          const prefixBytes=bytesWritten;
+          const copied=await copyRomfs({nsp,prodKeys,titleKeys,outputDirectory,signal,workers:concurrency,expected:metadata,firstOrder:files.length}, p=>progress({...p,bytesWritten:prefixBytes+p.bytesWritten}));
+          files.push(...copied.files);bytesWritten+=copied.bytesWritten;parallelIo=copied.io;
+          break;
+        }
         handle = await createOutput(outputDirectory, file.path);
         io.attachOutput(handle);
         handle.truncate(file.size);
@@ -120,16 +136,21 @@ export async function run({ nsp, prodKeys, titleKeys, outputDirectory, signal, m
         if (fileBytesWritten !== file.size) throw new ExtractionError('OUTPUT_WRITE_FAILED');
         handle.flush(); handle.close(); handle = undefined;
         io.attachOutput(undefined);
-        files.push(file);
+        files.push(partition ? { ...file, _order: partitionOrder } : file);
       }
     }
     checkCanceled();
-    const result = { ...metadata, files, filesWritten: files.length, bytesWritten, io: io.getStats(), cryptoKnownAnswers };
+    const stats=io.getStats();
+    if(parallelIo)for(const field of Object.keys(stats))stats[field]=field==='maxReadBytes'?Math.max(stats[field],parallelIo[field]):stats[field]+parallelIo[field];
+    const result = { ...metadata, files, filesWritten: files.length, bytesWritten, io: stats, cryptoKnownAnswers, ...(partition?{partitionTotal:romfsIndex}:{}) };
     progress({ phase: 'complete', bytesWritten, filesWritten: files.length });
     return result;
   } catch (error) {
     handle?.close(); handle = undefined;
-    for (const name of createdRoots) await outputDirectory.removeEntry(name, { recursive: true });
+    if(!partition)for(const name of createdRoots)for(let attempt=0;;attempt++){
+      try{await outputDirectory.removeEntry(name,{recursive:true});break;}
+      catch(cleanup){if(cleanup.name==='NotFoundError')break;if(attempt===99)throw cleanup;await new Promise(resolve=>setTimeout(resolve,50));}
+    }
     progress({ phase: 'error', code: sanitized(error).code, diagnostic: api?.GetLastDiagnostic(), bytesWritten });
     throw sanitized(error);
   } finally {

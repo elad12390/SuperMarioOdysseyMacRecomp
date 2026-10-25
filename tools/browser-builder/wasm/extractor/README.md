@@ -14,6 +14,7 @@ const result = await run({
   titleKeys,              // optional File
   outputDirectory,        // fresh, empty per-job OPFS directory handle
   signal,                 // optional AbortSignal, checked between copy chunks
+  workers: 4,             // optional full-mode maximum; 1 forces the reference path
 }, progress => postMessage({ type: 'progress', stage: 'extract', ...progress }));
 
 // result.titleId, result.version, result.mainBuildId
@@ -22,15 +23,22 @@ const result = await run({
 
 Deploy the complete published `wwwroot` directory together. The module resolves
 `./_framework/dotnet.js` relative to itself, so a GitHub Pages subpath works.
-Only one extraction may run in a given worker at a time. The host owns the job
-directory and should terminate the worker and remove the directory when the
-user cancels. Normal failures and cooperative `signal` cancellation close sync
-handles and remove this module's partial files before rejecting.
+Only one extraction may run in a given worker at a time. Full mode copies
+control/ExeFS sequentially, then partitions RomFS across up to four nested
+workers, limited by available hardware concurrency. `workers: 1` forces the
+sequential reference path; probe and ExeFS modes remain sequential. Each child
+uses the unchanged LibHac enumerator and copy routine in its own WASM runtime.
+The host owns the job directory: stop all workers before deleting partial
+output. The isolated client adapter's `cancel()` handles nested termination and
+bounded cleanup of its owned root, including the pool ownership marker.
 
-Publication deliberately sets `PublishTrimmed=false`. LibHac's net7.0 assembly
-requires framework forwarding facades that must remain in the WASM dependency
-graph. Use a clean scratch `obj`, `bin`, and publication directory when changing
-trimming settings; mixed old/new framework artifacts fail at runtime.
+Release publication AOT-compiles the extractor and its managed dependencies to
+WASM using the installed .NET workload. The required linker preserves the
+extractor, LibHac and its net7.0 `System.Runtime` forwarding facade. The adapted
+LibHac publish item uses `TrimMode=copy`: its bytes remain identical after the
+three existing AES factory adaptations. Use clean generated `obj`, `bin`, and
+publication directories when changing linker settings; keep private inputs and
+test evidence outside those generated directories.
 
 `progress` reports `phase` (`load`, `validate`, `validated`, `extract`, `complete`),
 `bytesWritten`, and file path/size/offset during copying. The returned `io`
@@ -43,17 +51,28 @@ through the same bounded output loop, before ExeFS/RomFS. American English is
 preferred, followed by the native extractor's supported language order. Missing
 icons are valid and do not add an output entry.
 
+RomFS pool progress includes `workers` with the actual partition count. Its
+`io` is the reporting child's bounded counters; the completed result aggregates
+all workers, taking the maximum of their `maxReadBytes` rather than summing it.
+
 The optional `extractor-client.js` / `extractor-worker.js` pair supplies an
 isolated worker adapter used by the browser regression test. The production
 shared pipeline can import `run` directly without this adapter.
 
-The RomFS copy path passed a real complete base-NSP extraction: 4,642 files,
-5,527,856,754 bytes, with a maximum 1 MiB physical input read and passing WASM
-NIST crypto checks. Optional icon preservation adds one verified 92,548-byte
-file for this input. The current control/ExeFS proof writes seven files and
-matches the native icon's SHA-256. Full output is therefore expected to contain
-4,643 files totaling 5,527,949,302 bytes; the unchanged RomFS copy was not rerun
-for this optional-icon addition. See `EVIDENCE.md` for exact evidence.
+The four-worker AOT publication passed complete base-NSP extraction in 27.163s,
+versus the retained sequential AOT run's 72.880s (2.68x). All 4,643 paths, sizes
+and SHA-256 values match, with actual progress reporting four workers and a
+maximum 1 MiB physical read in each partition. Cancellation removed its owned
+root and all five parent/child worker targets in the test; earlier ExeFS output
+hashes remained unchanged. See `EVIDENCE.md` for the saved proof.
+
+The retained sequential AOT publication passed complete base-NSP extraction: 4,643
+files / 5,527,949,302 bytes, including the icon, with a maximum 1 MiB physical
+input read and passing WASM NIST crypto checks. Every output path, size and
+SHA-256 matches a fresh interpreter baseline. Full extraction measured 72.880s
+versus 487.921s (6.69x); control/ExeFS measured 0.805s versus 2.241s (2.78x).
+These are extraction-only local measurements. See `EVIDENCE.md` for the exact
+published artifact and saved proofs.
 
 ## Validation and I/O
 
@@ -83,8 +102,8 @@ for this optional-icon addition. See `EVIDENCE.md` for exact evidence.
   expects paths; they are unlinked immediately and never written to OPFS.
 - Errors are sanitized and never include supplied key text or library stacks.
   `run` requires a dedicated worker, secure context, OPFS sync access handles,
-  and adequate browser storage. No SharedArrayBuffer or isolation headers are
-  required by this single-threaded WASM implementation.
+  and adequate browser storage. Each WASM runtime stays within one worker;
+  RomFS parallelism does not require SharedArrayBuffer or isolation headers.
 
 ## Build and test
 
@@ -110,6 +129,14 @@ capture. `Directory.Build.props` puts build intermediates and outputs under
 `tmp/odyssey/browser-extractor`, within this task's write scope. Deployable
 output is `tmp/odyssey/browser-extractor/publish/wwwroot/`.
 
+`RunAOTCompilation=true` is the Release default, not an optional integration
+flag. The lockfile includes the SDK's build-only IL linker. With the verified
+packages already cached, an offline publication can add
+`-p:RestoreSources="$PWD/tmp/odyssey/browser-extractor/fresh-nuget"`
+and `-p:NuGetAudit=false`; use `EMCC_FROZEN_CACHE=1` to reject missing Emscripten
+cache entries rather than acquire anything. No workload or dependency download
+was needed for the measured publication.
+
 The browser regression uses a separate puppeteer-core/headless-shell process,
 local file selection via the browser, and an isolated profile in the scratch
 directory. Its local HTTP fixture serves static tool assets only. It never
@@ -126,6 +153,30 @@ absolute `tmp/odyssey/browser-extractor/publish/wwwroot` path to test the exact
 publication output; the test serves all modules from that directory.
 `EXTRACTOR_FULL=1` adds complete RomFS extraction to the real-input suite.
 Private inputs are not test fixtures or tracked assets.
+
+`EXTRACTOR_WORKERS=4` forwards the requested pool size through every test job,
+including cancellation; `EXTRACTOR_WORKERS=1` forces the reference path. Omit it
+to exercise the API default of up to four workers. The proof records actual
+`progress.workers`, checks every reported I/O maximum against 1 MiB, and groups
+child counters by the retained reference enumeration's round-robin partition.
+Cancellation observes the parent and nested worker targets while the ownership
+marker exists, then requires the root and workers to disappear and the earlier
+ExeFS output hashes to remain unchanged.
+
+For the four-worker full comparison, keep the existing local private-input
+variables and set `EXTRACTOR_FULL=1`, `EXTRACTOR_WORKERS=4`,
+`EXTRACTOR_EXPECT_AOT=1`, and `EXTRACTOR_COMPARE_EVIDENCE` to
+`tmp/odyssey/browser-extractor/tests/aot-optimized-measured/evidence.json`
+(absolute path). That retained 4,643-file sequential AOT proof is the hash oracle;
+no additional full input corpus copy is needed.
+
+The proof records extraction time separately from output verification, hashes
+every actual output in the browser, and removes its owned profile after closing
+the browser. It refuses an existing run directory. Set `EXTRACTOR_EXPECT_AOT=1`
+to require the actual served native runtime's AOT setting, and
+`EXTRACTOR_COMPARE_EVIDENCE=/absolute/baseline/evidence.json` to require identical
+paths, sizes and SHA-256 values. Hash verification is serial and bounded to the
+supported corpus's files of at most 128 MiB; the complete NSP is never buffered.
 
 For the focused optional-icon regression, set `EXTRACTOR_ICON_ONLY=1` and
 `EXTRACTOR_ICON_REFERENCE` to an existing native `icon.jpg`. This mode only

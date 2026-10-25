@@ -1,5 +1,132 @@
 # Browser extraction evidence
 
+## Four-worker RomFS proof, 2026-10-25
+
+The published JS pool passed the actual local base NSP proof with
+`EXTRACTOR_WORKERS=4`, `EXTRACTOR_FULL=1`, `EXTRACTOR_EXPECT_AOT=1`, and
+`EXTRACTOR_COMPARE_EVIDENCE` pointing at the retained sequential
+`tests/aot-optimized-measured/evidence.json`. The AOT WASM was not rebuilt.
+
+Full extraction measured **27.1627s**, versus the retained sequential AOT
+**72.8795s**: **2.6831x faster**. Both produce **4,643 files / 5,527,949,302
+bytes**. Every actual path, size and SHA-256 matches; the returned enumeration
+order also matches. Timing includes worker/runtime startup and OPFS output,
+and excludes subsequent output hashing. Control/ExeFS stays sequential and
+measured 0.6604s in this run; that timing difference is not attributed to the
+RomFS pool. Browser hardware concurrency was 14; actual RomFS progress reported
+`workers: 4`.
+
+Every reported child I/O sample and the final aggregate maximum is at most
+1,048,576 bytes. Last observed child-progress counters:
+
+| RomFS partition | Progress samples | Physical reads | Max read bytes | Output bytes |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 2,345 | 2,466 | 1,048,576 | 1,518,742,748 |
+| 1 | 2,199 | 2,317 | 1,048,576 | 1,380,972,842 |
+| 2 | 2,055 | 2,152 | 1,048,576 | 1,202,929,221 |
+| 3 | 2,239 | 2,344 | 1,048,576 | 1,402,443,045 |
+
+The runner assigns these samples to the explicit round-robin partitions using
+the retained reference RomFS enumeration index modulo four. Product telemetry
+was not changed. Final aggregate I/O, including the parent: 9,762,068,992 input
+bytes read, 9,315 physical reads, 343,842 logical storage reads, 1 MiB maximum
+read, and 5,527,949,302 output bytes written. The selected NSP was read directly;
+no second full input corpus was staged.
+
+Cancellation occurred after an actual RomFS `CopyChunk` wrote bytes. Before
+cancel, the test observed the parent plus four nested worker targets and the
+`.extract-pool-owner` marker beside control/ExeFS/RomFS output. `cancel()`
+cleaned the owned root in **54.8ms**. The root was absent afterward, no parent or
+nested worker targets remained, and every earlier ExeFS output hash was
+unchanged. Successful full extraction also removed the ownership marker.
+Wrong-key and truncated-input rejection, existing-output preservation, actual
+WASM crypto known answers, AOT runtime configuration and network checks passed.
+
+Proof: `tests/aot-parallel-workers4-measured/evidence.json`, outcome GREEN.
+Captured job: `jobs/aot-parallel-workers4-proof.pid/.log/.exit`, PID 85602,
+exit 0. The owned browser profile was removed after browser closure. Inputs,
+keys, saves, Player and unrelated WIP were untouched; no full NSP-to-DMG build
+or native game run was part of this proof. Only the proof runner and these
+README/EVIDENCE docs were edited in this slice; no staging or commit occurred.
+
+## Sequential source-built AOT speedup, 2026-10-25
+
+The retained sequential publication is a linked AOT WASM build, verified with the
+real local base NSP. No SDK, workload, package or other download was needed.
+Installed tooling: .NET SDK 10.0.402, wasm-tools manifest 10.0.113, Mono/WASM
+runtime 10.0.13, on Apple Silicon macOS.
+
+| Real extraction | Interpreter baseline | AOT publication | Speedup |
+| --- | ---: | ---: | ---: |
+| Control and ExeFS, 7 files / 22,861,446 bytes | 2.241s | 0.805s | 2.78x |
+| Complete output, 4,643 files / 5,527,949,302 bytes | 487.921s | 72.880s | 6.69x |
+
+These are single local runs through the same proof harness and private inputs.
+Extraction timing includes worker/runtime loading and OPFS output, and excludes
+the subsequent SHA-256 verification. This is extractor acceptance, not timing
+or acceptance for the complete NSP-to-DMG/gameplay pipeline.
+
+Every actual output path, size and SHA-256 matches between the baseline and AOT
+full runs. Both run the existing NIST AES-128/AES-256 ECB and AES-128 CBC
+encrypt/decrypt known answers inside the active WASM instance. Both pass
+existing-output preservation, truncated-input and wrong-key rejection, and
+cancellation after real decrypted RomFS copying. Observed network violations:
+zero; private files remain browser File inputs and never become HTTP payloads.
+
+Full AOT I/O: 338,111 logical reads, 5,951 physical reads, maximum physical read
+1,048,576 bytes, physical input bytes 6,238,956,032, output 5,527,949,302 bytes.
+LibHac retains `IntegrityCheckLevel.ErrorOnInvalid`. Its post-link DLL is
+byte-identical to the existing three-factory adapted DLL; no parsing, AES mode,
+integrity or output-copy algorithm changed.
+
+The Release project now enables AOT and the SDK-required linker. The SDK's
+implicit build-only `Microsoft.NET.ILLink.Tasks` 10.0.13 is locked. The extractor,
+LibHac and the required `System.Runtime` facade are rooted. Because the adapted
+LibHac DLL has a scratch path outside the original NuGet runtime item, its
+`ResolvedFileToPublish` item explicitly opts into SDK linker processing with
+`PostprocessAssembly=true` and `TrimMode=copy`.
+
+Actual build proof:
+
+- `jobs/aot-sdk-info.*` / `aot-workloads.*`: installed workload inventory, exit 0.
+- `jobs/aot-clean-release-restore.*`: Release restore from existing local NuGet
+  caches only, exit 0.
+- `jobs/aot-publish-link-input-fix.*`: clean build, exit 0, 79.3s. Logs show 24
+  assemblies compiled to bitcode and native objects, then emcc/WASM linking.
+- Generated `obj/Release/net10.0/wasm/for-publish/driver-gen.c` registers AOT
+  modules for BrowserExtractor, LibHac and BouncyCastle.Cryptography.
+- `jobs/aot-publish-locked-reuse.*`: ordinary restore plus locked Release
+  publication using the local package source, exit 0; native AOT outputs reused.
+- `jobs/aot-debug-locked-restore.*`: default-configuration locked restore also
+  passes against the same local package cache.
+- All build jobs capture PID, log and exit status. `EMCC_FROZEN_CACHE=1` prevents
+  Emscripten from acquiring missing cache assets.
+
+Sequential proof publication directory:
+`tmp/odyssey/browser-extractor/publish/wwwroot/`. Its public bundle contained
+105 files / 29,186,492 bytes before the later JS-only pool integration. Native runtime:
+
+`_framework/dotnet.native.lfr0j86wa6.wasm`, 12,222,380 bytes, SHA-256:
+
+`1f02cf53cf5c15d2b4675289de99f8874b41490eedb7b868b4d93c9cde19f2d3`
+
+Retained real proof:
+
+- `tests/aot-baseline-measured/evidence.json`: baseline timings, crypto checks,
+  every original output hash, negative cases and network observation.
+- `tests/aot-optimized-measured/evidence.json`: AOT timings, every matching output
+  hash, actual served runtime `runAOTCompilation=true`, comparisons and GREEN.
+- `tests/aot-optimized-measured/tool-bundle-hashes.json`: every public tool file's
+  path, size and SHA-256.
+- `jobs/aot-baseline-proof.*` / `aot-optimized-proof.*`: both exit 0.
+
+Both owned headless browser profiles were removed after browser closure.
+The proof selects the existing NSP directly; it does not stage another full
+input corpus. Input NSPs, keys, prepared games, saves and Player were untouched.
+No full browser game build, native game or user-browser session was run. Changes
+remain uncommitted for main review. Earlier evidence below describes the
+interpreter implementation and its historical publication.
+
 All conversion tests use a separate puppeteer-core process and the cached
 chrome-headless-shell, never Player or the user's Chrome. Private files are
 selected as browser Files; the HTTP fixture serves only static public tools.
