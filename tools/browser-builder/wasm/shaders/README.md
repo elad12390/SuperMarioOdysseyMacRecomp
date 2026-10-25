@@ -149,3 +149,9 @@ Browser proof covers those three GLSL outputs, all 15 topology variants and all
 fallback is used in the browser. Re-run with tests/prove-geometry.sh.
 The prior VS/PS/CS proof also passes after these changes. Rebuild the public
 higher shader bundle, CHAIN identity and matching runtime header afterward.
+
+## Fresh publication dependency check
+
+The browser project directly references Spv.Generator and publishes the complete managed dependency graph. A fresh publish previously omitted this transitive assembly even though the existing local cache could translate shaders. The build now verifies the actual WebAssembly assets for ShaderTranslator, Ryujinx.Graphics.Shader, Ryujinx.Common, Spv.Generator and System.Runtime before the public tool bundle is assembled. The original translator sources and options remain unchanged.
+
+`bun tools/browser-builder/wasm/shaders/verify-publish.mjs /absolute/published/wwwroot` checks an existing publication. Real shader acceptance still compares translated output against the native reference.

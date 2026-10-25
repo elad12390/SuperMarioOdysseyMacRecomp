@@ -11,3 +11,4 @@ cp "$script_dir/shader-translator.mjs" "$work_dir/publish/wwwroot/shader-transla
 cp "$script_dir/shader-worker.mjs" "$work_dir/publish/wwwroot/shader-worker.mjs"
 cp "$repo_dir/external/nxnative/LICENSE" "$work_dir/publish/wwwroot/nxnative.LICENSE"
 cp "$repo_dir/external/nxnative/dm/third_party/ryujinx/LICENSE.txt" "$work_dir/publish/wwwroot/Ryujinx.LICENSE.txt"
+bun "$script_dir/verify-publish.mjs" "$work_dir/publish/wwwroot"
