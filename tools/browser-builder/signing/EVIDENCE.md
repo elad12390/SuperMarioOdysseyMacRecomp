@@ -1,5 +1,149 @@
 # Browser resource seal: independently verified
 
+## Bounded native resource digests (2026-10-25)
+
+Resources from 256 KiB through 64 MiB (inclusive) now use real WebCrypto SHA-1
+and SHA-256. The entry is read once, in at most 1 MiB requests, directly into a
+reusable lane buffer. Four lanes retain at most 64 MiB each / 256 MiB total,
+plus native digest copies. Smaller and oversized resources continue streaming
+through hash-wasm. The native jobs both settle before buffer reuse or error
+return. Missing WebCrypto uses streaming WASM; NotSupportedError falls back
+over already-read bytes without another source open/read. All existing
+expected-SHA, original-resource, size/EOF and signature-layout checks remain.
+
+A fresh paired comparison used the original real app's 71,098 files and
+6,825,873,335 resource bytes in the same owned headless Chrome, without copying
+the app or corpus. Both versions checked 66,458 conversion digests against
+reference records from the original app. File selection and bundling are
+outside the timed sealApp calls.
+
+| Measurement | Streaming WASM | Bounded WebCrypto |
+| --- | ---: | ---: |
+| Wall time | 39,391.2 ms | 30,496.5 ms |
+| Source opens / closes | 71,097 / 71,097 | 71,097 / 71,097 |
+| Read calls including EOF/metadata | 146,494 | 146,494 |
+| Bytes read including metadata | 6,825,952,246 | 6,825,952,246 |
+| Maximum read | 1 MiB | 1 MiB |
+| Maximum active readers | 4 | 4 |
+| Native digest calls | 0 | 3,648 |
+
+Measured saving: 8,894.7 ms / 22.58%, a 1.29x speedup. Native calls hashed
+5,198,713,039 resource bytes with each algorithm (1,824 eligible resources).
+The complete Launcher (72,096 bytes) and CodeResources (20,532,642 bytes) match
+the streaming baseline and original native-verified real app exactly, retaining
+the hashes recorded below. No production packed-OPFS package-stage duration or
+10-second target is established by this asynchronous File-reader measurement.
+
+The 2 MiB generated File test uses actual native digests and independent Bun
+CryptoHasher references for both resource hashes. Partial reads are exercised,
+the source opens/closes once, and the complete Launcher equals the original
+with only the independently computed resource slot patched. Tests also cover
+both inclusive native-size bounds, real WASM fallback without WebCrypto, a
+real provider NotSupportedError, short/overlong/mismatched native-size inputs,
+and abort during the actual native digest jobs. All 19 focused tests and both
+signing/builder typechecks pass. Existing malformed metadata, expected digests,
+tamper and cancellation tests remain active.
+
+Evidence and public worker bundles are retained under
+`tmp/odyssey/graphics-optimization/sealing-webcrypto-*`. The browser/profile
+ownership is recorded and the owned profile is removed after the comparison.
+All implementation changes remain confined to signing; no stage or commit.
+
+## Conversion digest integrity hook (2026-10-25)
+
+The sealer validates optional `DmgEntry.expectedSha256` values before opening
+inputs or hashing. Values must be exactly 64 hexadecimal characters, with
+uppercase accepted and trailing newlines rejected. Each resource's already
+computed SHA-256 is compared before adding envelope records or patching the
+Launcher. No extra payload read or hash pass is introduced.
+
+The regression tests use the existing real public-template font through the
+actual File/Blob DmgEntry reader. A correct expected digest produces identical
+Launcher and CodeResources bytes and opens the converted resource exactly once.
+A same-size one-byte corruption and a wrong well-formed digest both reject
+before sealed progress, leaving the input metadata unchanged. Malformed
+digests reject before opening the resource or reporting hash progress. Both
+negative cases were demonstrated failing against the previous implementation
+before adding the hook. Logs are under
+`tmp/odyssey/graphics-optimization/sealing-integrity-*`.
+The current focused suite passes all 13 tests (72,423 assertions); signing and
+builder typechecks also pass. The hook has no separate full-payload performance
+measurement: it compares the existing 32-byte digest without another read or
+hash pass. The measured four-lane gain below predates this hook.
+
+## Real-app source latency optimization (2026-10-25)
+
+Status: uncommitted candidate, not a demonstrated production OPFS improvement.
+The main task is replacing loose intermediates with packed OPFS sources and
+shared readonly sync handles. Measure that provider before adopting this
+concurrency change; its main benefit in this proof is asynchronous File-read
+latency. No packed-provider or complete-pipeline timing is claimed here.
+
+The unchanged serial sealer and bounded four-lane sealer processed the original
+71,098 files from
+`tmp/odyssey/browser-release/generated-1987-acceptance/relocated/Super Mario Odyssey.app`.
+The matching public template supplies only the original signing metadata;
+private resources are mounted as original File objects, never copied into OPFS
+or another app. Both timed runs use the same asynchronous File slice reader,
+resource order, 1 MiB maximum read and real hash-wasm implementations in an
+owned HeadlessChrome/154.0.8037.92 browser.
+
+| Measurement | Serial | Four bounded lanes |
+| --- | ---: | ---: |
+| Resource bytes | 6,825,873,335 | 6,825,873,335 |
+| Total input files | 71,098 | 71,098 |
+| Sealing wall time | 87,555.0 ms | 41,368.5 ms |
+| Source opens / closes (including metadata) | 71,097 / 71,097 | 71,097 / 71,097 |
+| Read calls (including metadata and EOF) | 146,494 | 146,494 |
+| Total bytes read (including metadata) | 6,825,952,246 | 6,825,952,246 |
+| Maximum source read | 1 MiB | 1 MiB |
+
+This saves 46,186.5 ms (52.75%), a 2.12x speedup for the full real-file seal.
+The serial run spent 60,694.3 ms awaiting reads. The optimized sum of individual
+read waits is 136,228.8 ms because independent waits overlap; it is not CPU time
+and must not be compared directly with wall time. A discovery run using
+FileReaderSync took 123,654.8 ms, with 85,725.7 ms in reads; it is not used as
+the before/after comparison because its reader differs.
+
+Both runs reproduce the existing real app's signing metadata exactly:
+
+- Launcher: 72,096 bytes,
+  `05670be585814893f67b45ad545ae63d859b34389c266d486013e2669364e9da`.
+- CodeResources: 20,532,642 bytes,
+  `9ce462f6ea701c0df00b4970498791079eb0e39ac84eb2b318a8bb78a414be6a`.
+
+Every resource is still read and hashed with SHA-1 and SHA-256, with unchanged
+size/EOF, original-resource and signing-layout validation. The four lanes have
+private hash states and 1 MiB buffers, and drain all opened readers before an
+error or cancellation returns. No caller-supplied digest cache or whole-file
+native crypto buffer was introduced. New tests verify interleaved digest
+correctness, the four-reader ceiling, monotonic progress and failure/cancel
+cleanup against real Blob readers. Original tamper and signature negatives
+remain in the focused suite.
+
+All 10 focused tests and both signing/builder typechecks pass. Readonly native
+`codesign --verify --deep --strict --verbose=4` also passes on the original app
+whose Launcher and CodeResources are exactly reproduced by both browser runs.
+The app is never launched or modified for this verification.
+
+Current focused commands from the repository root:
+
+```sh
+bun run --cwd tools/browser-builder/signing typecheck
+bun run --cwd tools/browser-builder/signing test
+bun run --cwd tools/browser-builder typecheck
+```
+
+Evidence, original/optimized browser worker bundles, owned-browser PIDs and
+captured job logs/statuses remain under
+`tmp/odyssey/graphics-optimization/sealing-*`. Only metadata and public tool
+source are retained; owned headless profiles are removed. This measures the
+actual sealApp function on real File-backed resources, not the complete
+production OPFS build. The saved 101.619-second packaging interval includes
+different source adapters and handoff costs; its new duration requires the
+main task's complete pipeline measurement. No stage or commit was made for
+this slice.
+
 ## 70,000-file real-scale regression (2026-10-25)
 
 The production failure `Updated CodeResources exceeds metadata bound` was

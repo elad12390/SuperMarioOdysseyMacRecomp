@@ -34,6 +34,7 @@ export async function sealApp(entries:DmgEntry[], options:SealOptions):Promise<D
     if(!path.startsWith(options.appName+"/") || !Number.isSafeInteger(e.size)||e.size<0 || !Number.isInteger(e.mode)||e.mode<0||e.mode>0o170777||(e.mode&0o7000))throw Error("Invalid signing entry");
     if(e.type==="directory") { if(e.size!==0||e.open)throw Error("Invalid directory entry"); }
     else if(e.type!==undefined&&e.type!=="file" || typeof e.open!=="function" || (e.mode&0o170000)!==0&&(e.mode&0o170000)!==0o100000)throw Error("Only ordinary files can be resource sealed");
+    if(e.expectedSha256!==undefined && (typeof e.expectedSha256!=="string"||e.expectedSha256.length!==64||!/^[0-9a-f]{64}$/i.test(e.expectedSha256)))throw Error(`Invalid expected SHA-256: ${path}`);
     map.set(path,e);
   }
   const requireEntry=(suffix:string)=>{const e=map.get(prefix+suffix);if(!e||e.type==="directory")throw Error(`Missing signing input: ${suffix}`);return e;};
@@ -59,27 +60,66 @@ export async function sealApp(entries:DmgEntry[], options:SealOptions):Promise<D
   const resources=[...map].filter(([path,e])=>path.startsWith(prefix+"Resources/") && e.type!=="directory");
   const seen=new Set<string>(), additions:{path:string;sha1:Uint8Array;sha256:Uint8Array}[]=[];
   let totalBytes=0; for(const [,e] of resources) {totalBytes+=e.size;if(!Number.isSafeInteger(totalBytes))throw Error("Resource total exceeds safe integer range");}
-  let hashedBytes=0,filesDone=0,lastYield=0; const buffer=new Uint8Array(1024*1024);
-  for(const [full,e] of resources) {
-    const path=full.slice(prefix.length), legacy=parsed.first.get(path), modern=parsed.second.get(path);
+  let hashedBytes=0,filesDone=0,lastYield=0,nextResource=0;
+  // Resource sources spend time awaiting independent file/handle operations.
+  // Each lane reuses one buffer: 1 MiB for streams, growing only as needed for
+  // native digests of 256 KiB..64 MiB resources. Four lanes retain <=256 MiB.
+  const lanes=await Promise.all(Array.from({length:Math.min(4,resources.length)},async(_,i)=>({
+    sha1:i===0?sha1:await createSHA1(),sha256:i===0?sha256:await createSHA256(),buffer:new Uint8Array(1024*1024)
+  })));
+  let stopped=false,failure:unknown;
+  const check=()=>{signal?.throwIfAborted();if(stopped)throw failure;};
+  async function hashResource([full,e]:[string,DmgEntry],hashes:typeof lanes[number]) {
+    const {sha1,sha256}=hashes;
+    check();
+    const path=full.slice(prefix.length), legacy=parsed.first.get(path), modern=parsed.second.get(path), expectedSha256=e.expectedSha256;
     if(!!legacy!==!!modern)throw Error(`Inconsistent existing resource seal: ${path}`);
     if(!legacy && !path.startsWith("Resources/game/") && path!=="Resources/Game.icns")throw Error(`New resource outside permitted game/icon paths: ${path}`);
-    sha1.init();sha256.init(); signal?.throwIfAborted(); const r=await e.open!(); let remaining=e.size;
+    const subtle=globalThis.crypto?.subtle;
+    const native=e.size>=256*1024&&e.size<=64*1024*1024&&typeof subtle?.digest==="function";
+    if(native&&hashes.buffer.length<e.size)hashes.buffer=new Uint8Array(e.size);
+    const buffer=hashes.buffer;
+    sha1.init();sha256.init(); const r=await e.open!(); let remaining=e.size;
     try {
       while(remaining>0) {
-        signal?.throwIfAborted();const part=buffer.subarray(0,Math.min(buffer.length,remaining)), n=await r.read(part);
+        check();const at=native?e.size-remaining:0,part=buffer.subarray(at,at+Math.min(1024*1024,remaining)), n=await r.read(part);
+        check();
         if(!Number.isInteger(n)||n<=0||n>part.length)throw Error(`Short/invalid resource source: ${path}`);
-        sha1.update(part.subarray(0,n));sha256.update(part.subarray(0,n));remaining-=n;hashedBytes+=n;
+        if(!native){sha1.update(part.subarray(0,n));sha256.update(part.subarray(0,n));}remaining-=n;hashedBytes+=n;
         options.progress?.({phase:"hash",path:e.path,hashedBytes,totalBytes,filesDone,totalFiles:resources.length});
-        if(hashedBytes-lastYield>=16*1024*1024) {await new Promise<void>(r=>setTimeout(r,0));lastYield=hashedBytes;}
+        if(hashedBytes-lastYield>=16*1024*1024) {lastYield=hashedBytes;await new Promise<void>(r=>setTimeout(r,0));}
       }
-      signal?.throwIfAborted(); if(await r.read(buffer.subarray(0,1))!==0)throw Error(`Overlong resource source: ${path}`);
+      check(); if(await r.read(native?new Uint8Array(1):buffer.subarray(0,1))!==0)throw Error(`Overlong resource source: ${path}`);
     } finally {await r.close?.();}
-    const a=sha1.digest("binary"), b=sha256.digest("binary");
+    let a:Uint8Array,b:Uint8Array;
+    if(native){
+      check();
+      // Drain both jobs before reusing the lane's buffer, even on rejection.
+      const results=await Promise.allSettled([subtle!.digest("SHA-1",buffer.subarray(0,e.size)),subtle!.digest("SHA-256",buffer.subarray(0,e.size))]);
+      check();
+      for(const result of results)if(result.status==="rejected"&&result.reason?.name!=="NotSupportedError")throw result.reason;
+      if(results[0]!.status==="fulfilled"&&results[1]!.status==="fulfilled"){
+        a=new Uint8Array(results[0]!.value);b=new Uint8Array(results[1]!.value);
+      }else{
+        // An unsupported native algorithm falls back over the bytes already
+        // read. No source is reopened and no second payload read is needed.
+        for(let at=0;at<e.size;at+=1024*1024){check();const part=buffer.subarray(at,Math.min(e.size,at+1024*1024));sha1.update(part);sha256.update(part);}
+        a=sha1.digest("binary");b=sha256.digest("binary");
+      }
+    }else{a=sha1.digest("binary");b=sha256.digest("binary");}
+    // Compare the conversion digest against the same bytes used for the seal.
+    if(expectedSha256!==undefined&&!b.every((value,i)=>value===Number.parseInt(expectedSha256.slice(i*2,i*2+2),16)))throw Error(`Resource SHA-256 mismatch: ${path}`);
     if(legacy&&modern) {const fields=dictionary(modern), hash=fields.get("hash2");if(!hash||!equal(data(legacy,20),a)||!equal(data(hash,32),b))throw Error(`Existing resource changed: ${path}`);}
     else additions.push({path,sha1:a,sha256:b});
     seen.add(path);filesDone++;
   }
+  await Promise.all(lanes.map(async hashes=>{
+    try {while(!stopped&&nextResource<resources.length)await hashResource(resources[nextResource++]!,hashes);}
+    catch(error) {if(!stopped){failure=error;stopped=true;}}
+  }));
+  // Every in-flight reader has closed before failure escapes to the caller.
+  if(stopped)throw failure;
+  signal?.throwIfAborted();
   for(const path of parsed.first.keys())if(!seen.has(path))throw Error(`Missing originally sealed resource: ${path}`);
   for(const path of parsed.second.keys())if(path.startsWith("Resources/")&&!seen.has(path))throw Error(`Missing originally sealed resource: ${path}`);
   additions.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);

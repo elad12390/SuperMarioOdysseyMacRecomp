@@ -28,7 +28,8 @@ reads them again. Keep source files immutable between those passes.
 ## Exact operation
 
 1. Read bounded signing metadata: Launcher (maximum 16 MiB), input CodeResources
-   (8 MiB), and Info.plist (1 MiB). Game payloads are not buffered. The generated
+   (8 MiB), and Info.plist (1 MiB). Game payload buffering is bounded separately
+   to the 64 MiB per-lane native-digest limit described below. The generated
    output envelope has a separate **64 MiB** ceiling: the 70,000-file regression
    produces 17,296,042 bytes, so 8 MiB cannot represent real game file counts.
    The input parser and all Mach-O/signature bounds remain unchanged.
@@ -42,8 +43,14 @@ reads them again. Keep source files immutable between those passes.
    signature is created or reused.
 4. Parse the trusted XML envelope with a bounded balanced plist parser. Preserve
    all original text, `files`, `files2`, nested dmhost cdhash/requirement and rules.
-   Stream every ordinary resource through incremental SHA-1 and SHA-256 in
-   pinned hash-wasm 4.12.0. Existing sealed resources must match both hashes.
+   Hash every ordinary resource with SHA-1 and SHA-256. Files from 256 KiB
+   through 64 MiB use native WebCrypto after one bounded read; smaller and
+   larger files stream through pinned hash-wasm 4.12.0. Existing sealed
+   resources must match both hashes.
+   Optional `DmgEntry.expectedSha256` values must be exactly 64 hexadecimal
+   characters (either case), validated before hashing. Resource digests must
+   match the conversion digest before updating CodeResources. This comparison
+   reuses the existing SHA-256 result; it adds no payload pass or source open.
 5. Add SHA-1 records to `files` and SHA-256 `hash2` records to `files2` for new
    `Contents/Resources/game/...` files or `Contents/Resources/Game.icns`.
    Normalize paths with the same frozen HFS normalization used by the DMG
@@ -58,12 +65,33 @@ The active SuperBlob length governs signature parsing. Apple's signer reserves
 extra LC_CODE_SIGNATURE storage and can leave nonzero unused tail bytes there;
 these bytes are preserved, not interpreted as signature blobs or cleared.
 
-Resource reading uses a reusable **1 MiB** buffer, checks declared sizes and EOF,
-and closes readers on success/error/cancel. It yields to worker tasks every
-16 MiB, including synchronous WASM readers. Memory is bounded by chunks plus
+Resource reading uses at most **four independent lanes**, each with private
+SHA-1/SHA-256 state and a reusable buffer starting at **1 MiB**. For native
+digests, the buffer grows only as needed, up to **64 MiB per lane / 256 MiB
+retained across four lanes**, in addition to the browser's native digest copies.
+Every read request remains bounded to 1 MiB; bytes go directly into the digest
+buffer without an extra payload read or accumulation copy. Smaller and oversized
+files stream through WASM. No whole-game/image buffer is created.
+Every resource still receives both hashes, declared-size and EOF checks. All
+in-flight readers close before an error or cancellation returns. File completion
+order can vary; aggregate progress stays monotonic and new envelope records are
+sorted before insertion, preserving deterministic output. It yields to worker
+tasks every 16 MiB, including synchronous WASM readers. Memory is bounded by
+the lane buffers, native digest copies, hash states and
 metadata/envelope/file records, independent of total game payload size. The
 result remains an ordinary ad-hoc signature; Developer ID, notarization and
 Gatekeeper approval are outside this API.
+
+If WebCrypto is unavailable, the existing streaming WASM path is used. If a
+native algorithm reports `NotSupportedError`, both native jobs are drained and
+WASM hashes the already-read bounded bytes without reopening the resource.
+Other native failures reject the seal. Abort is checked before and after native
+jobs; both jobs settle before the lane buffer can be reused or failure returns.
+
+Four lanes can share readonly, position-based OPFS pack handles while keeping
+each entry's cursor separate. The caller owns shared pack-handle lifetime through
+sealing and DMG writing. The standalone real-File measurements in EVIDENCE.md
+do not establish a production package-stage time for that provider.
 
 ## Verification
 
@@ -75,6 +103,14 @@ bun test ./test/seal.test.ts
 bun run typecheck
 bun run ./test/browser.ts
 bun run ./test/verify.ts
+```
+
+From the repository root, the focused current checks are:
+
+```sh
+bun run --cwd tools/browser-builder/signing typecheck
+bun run --cwd tools/browser-builder/signing test
+bun run --cwd tools/browser-builder typecheck
 ```
 
 The test server serves static public-template fixtures only. A dedicated
