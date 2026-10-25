@@ -27,7 +27,8 @@ profile = profile.replace(/^build\t.*\n/gm, '') + 'build\tv0\t1.0.0\tmain=3ca12d
 const sources = { format: 1, revision, files, profile, profileSha256: hash(profile), provenance: { nxnative: revision, output: 'MSL source; native first-launch Metal compilation approved' } };
 await mkdir(out, { recursive: true });
 await writeFile(path.join(out, 'sources.json'), JSON.stringify(sources));
-for (const name of ['index.mjs', 'worker.mjs', 'file-fs.mjs', 'adapter.py']) await cp(path.join(here, name), path.join(out, name));
+const adapterAssets = ['adapter.py', 'file-fs.mjs', 'worker.mjs', 'index.mjs', 'page-store.mjs', 'asset-loader.mjs', 'parallel.mjs', 'build-worker.mjs', 'yaz0.mjs', 'packed-output.mjs', 'scan.mjs', 'scan-worker.mjs'];
+for (const name of adapterAssets) await cp(path.join(here, name), path.join(out, name));
 const rewriter = process.env.REWRITER_BUNDLE || path.join(root, 'tmp/odyssey/browser-rewriter/bundle');
 await cp(path.join(rewriter, 'pyodide'), path.join(out, 'pyodide'), { recursive: true });
 const wheel = 'lz4-4.4.4-cp313-cp313-pyodide_2025_0_wasm32.whl';
@@ -58,7 +59,7 @@ await visit(out);
 const assetDigest = prefix => hash(JSON.stringify(assets.filter(a => a.path.startsWith(prefix))));
 const cs = files.filter(f => f.path.startsWith('dm/gfx/tools/dmsh_xlate/'));
 const identity = { backend: 'browser-msl-source-v1', maxwell_assets: assetDigest('maxwell/'), cross_assets: assetDigest('cross/'),
-  adapter_assets: hash(JSON.stringify(assets.filter(a => ['adapter.py', 'file-fs.mjs', 'worker.mjs', 'index.mjs'].includes(a.path)))),
+  adapter_assets: hash(JSON.stringify(assets.filter(a => adapterAssets.includes(a.path)))),
   python_assets: assetDigest('pyodide/'), python_wheels: hash(JSON.stringify(assets.filter(a => a.path.endsWith('.whl')))),
   sources: assets.find(a => a.path === 'sources.json').sha256,
   xlate_source: hash(cs.map(f => f.text).join('')).slice(0, 16) };

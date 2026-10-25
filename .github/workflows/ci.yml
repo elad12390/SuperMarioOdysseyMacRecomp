@@ -29,4 +29,5 @@ jobs:
           bun run --cwd tools/browser-builder typecheck
           bun run --cwd tools/game-harness check
           bun run --cwd tools/browser-builder test
+          bun test ./tools/browser-builder/pipeline/shaders/test/asset-loader.test.mjs ./tools/browser-builder/pipeline/shaders/test/yaz0.test.mjs ./tools/browser-builder/pipeline/shaders/test/parallel.test.mjs
           bun test ./tools/browser-builder/dmg/test

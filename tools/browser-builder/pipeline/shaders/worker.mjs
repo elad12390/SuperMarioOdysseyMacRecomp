@@ -1,7 +1,12 @@
 import { directoryFiles, mountFiles, mountScratch } from './file-fs.mjs';
+import { verifyAssets } from './asset-loader.mjs';
+import { buildParallel } from './parallel.mjs';
+import { decodeYaz0 } from './yaz0.mjs';
+import { scanParallel } from './scan.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const adapterAssets = ['adapter.py', 'file-fs.mjs', 'worker.mjs', 'index.mjs', 'page-store.mjs', 'asset-loader.mjs', 'parallel.mjs', 'build-worker.mjs', 'yaz0.mjs', 'packed-output.mjs', 'scan.mjs', 'scan-worker.mjs'];
 const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 const digest = async bytes => hex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
 const messages = { bootstrap: 'Loading verified shader conversion tools', index: 'Reading the local game file list',
@@ -17,24 +22,18 @@ async function responseBytes(url) {
   if (!response.ok) throw new Error(`Shader tool asset is unavailable: ${url.pathname} (${response.status})`);
   return new Uint8Array(await response.arrayBuffer());
 }
-async function bootstrap(bundleURL) {
+async function bootstrap(bundleURL, { translators = true } = {}) {
   const manifest = JSON.parse(decoder.decode(await responseBytes(staticURL('toolchain.json', bundleURL))));
   if (manifest.format !== 1 || !/^[a-f0-9]{12}$/.test(manifest.chain)) throw new Error('Unsupported browser shader toolchain manifest');
-  const verified = [];
-  for (const asset of manifest.assets) {
-    if (!asset.path || asset.path.split('/').some(n => !n || n === '.' || n === '..') || /[\\\0]/.test(asset.path)) throw new Error('Unsafe shader tool asset path');
-    const bytes = await responseBytes(staticURL(asset.path, bundleURL));
-    const sha256 = await digest(bytes);
-    if (bytes.length !== asset.size || sha256 !== asset.sha256) throw new Error(`Shader tool checksum mismatch: ${asset.path}`);
-    verified.push({ path: asset.path, size: bytes.length, sha256 });
-    if (verified.length % 20 === 0) progress({ stage: 'bootstrap', completed: verified.length, total: manifest.assets.length });
-  }
+  const verified = await verifyAssets(manifest.assets, bundleURL, { onProgress: event => {
+    if (event.completed % 20 === 0 || event.completed === event.total) progress({ stage: 'bootstrap', ...event });
+  } });
   const listHash = list => digest(encoder.encode(JSON.stringify(list)));
   const identity = { ...manifest.identity };
   for (const [field, prefix] of [['maxwell_assets', 'maxwell/'], ['cross_assets', 'cross/'], ['python_assets', 'pyodide/']]) {
     if (identity[field] !== await listHash(verified.filter(a => a.path.startsWith(prefix)))) throw new Error(`Shader ${field} fingerprint mismatch`);
   }
-  if (identity.adapter_assets !== await listHash(verified.filter(a => ['adapter.py', 'file-fs.mjs', 'worker.mjs', 'index.mjs'].includes(a.path)))) throw new Error('Shader adapter fingerprint mismatch');
+  if (identity.adapter_assets !== await listHash(verified.filter(a => adapterAssets.includes(a.path)))) throw new Error('Shader adapter fingerprint mismatch');
   if (identity.python_wheels !== await listHash(verified.filter(a => a.path.endsWith('.whl')))) throw new Error('Shader Python wheel fingerprint mismatch');
   if (identity.sources !== verified.find(a => a.path === 'sources.json')?.sha256) throw new Error('Shader rule source fingerprint mismatch');
   const expectedChain = (await digest(encoder.encode('switchrecomp-browser-shader-chain\0' + JSON.stringify(identity)))).slice(0, 12);
@@ -43,6 +42,7 @@ async function bootstrap(bundleURL) {
   const { loadPyodide } = await import(staticURL('pyodide/pyodide.mjs', bundleURL).href);
   const py = await loadPyodide({ indexURL: staticURL('pyodide/', bundleURL).href,
     stdout: text => progress({ stage: 'python', text }), stderr: text => progress({ stage: 'python', text }) });
+  globalThis.shader_decode_yaz0 = bytes => decodeYaz0(bytes.toJs());
   await py.loadPackage([staticURL(manifest.lz4Wheel, bundleURL).href, staticURL(manifest.lzmaWheel, bundleURL).href]);
   for (const file of sources.files) {
     const bytes = encoder.encode(file.text);
@@ -51,10 +51,12 @@ async function bootstrap(bundleURL) {
     py.FS.mkdirTree(target.slice(0, target.lastIndexOf('/'))); py.FS.writeFile(target, bytes);
   }
   if (await digest(encoder.encode(sources.profile)) !== sources.profileSha256) throw new Error('Pinned public shader profile checksum mismatch');
-  const { createShaderTranslator } = await import(staticURL('maxwell/shader-translator.mjs', bundleURL).href);
-  const { createMslTranslator } = await import(staticURL('cross/translator.mjs', bundleURL).href);
-  const maxwell = await createShaderTranslator();
-  const cross = await createMslTranslator();
+  let maxwell,cross;
+  if(translators){
+    const { createShaderTranslator } = await import(staticURL('maxwell/shader-translator.mjs', bundleURL).href);
+    const { createMslTranslator } = await import(staticURL('cross/translator.mjs', bundleURL).href);
+    maxwell = await createShaderTranslator();cross = await createMslTranslator();
+  }
   const adapter = decoder.decode(await responseBytes(staticURL('adapter.py', bundleURL)));
   return { py, sources, manifest, adapter, maxwell, cross };
 }
@@ -113,18 +115,29 @@ async function put(root, path, bytes) {
   catch (error) { await writable.abort().catch(() => {}); throw error; }
   return { path, size: bytes.byteLength, sha256: await digest(bytes) };
 }
-async function exportTree(py, source, root, prefix, files) {
+async function removeScratch(root) {
+  for(let attempt=0;attempt<250;attempt++) {
+    try {await root.removeEntry('.shader-work',{recursive:true});return;}
+    catch(error) {
+      if(error.name==='NotFoundError')return;
+      if(error.name!=='NoModificationAllowedError'||attempt===249)throw error;
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+  }
+}
+async function exportTree(py, source, root, prefix, files, include = () => true) {
   for (const name of py.FS.readdir(source).filter(n => n !== '.' && n !== '..').sort()) {
     const path = source + '/' + name;
-    if (py.FS.isDir(py.FS.stat(path).mode)) await exportTree(py, path, root, prefix + name + '/', files);
+    if (py.FS.isDir(py.FS.stat(path).mode)) await exportTree(py, path, root, prefix + name + '/', files, include);
     else {
+      if (!include(name)) continue;
       const size = py.FS.stat(path).size;
       if (name.endsWith('.metallib')) throw new Error('Browser source build unexpectedly emitted a metallib');
       let directory = root;
       const outputPath = prefix + name;
       const parts = outputPath.split('/');
       for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part, { create: true });
-      const writable = await (await directory.getFileHandle(parts.at(-1), { create: true })).createWritable();
+      const writable = await (await directory.getFileHandle(parts.at(-1), { create: true })).createSyncAccessHandle();
       const stream = py.FS.open(path, 'r');
       const hasher = py.runPython('hashlib.sha256()');
       const buffer = new Uint8Array(Math.min(Math.max(size, 1), 4 * 1024 * 1024));
@@ -136,18 +149,18 @@ async function exportTree(py, source, root, prefix, files) {
           const chunk = buffer.subarray(0, count);
           const bytes = py.toPy(chunk);
           try { hasher.update(bytes); } finally { bytes.destroy(); }
-          await writable.write(chunk);
+          if (writable.write(chunk, { at: position }) !== count) throw new Error('Incomplete OPFS shader source export');
           position += count;
         }
-        await writable.close();
+        writable.truncate(size); writable.close();
         files.push({ path: outputPath, size, sha256: hasher.hexdigest() });
-      } catch (error) { await writable.abort().catch(() => {}); throw error; }
+      } catch (error) { try { writable.close(); } catch {} throw error; }
       finally { py.FS.close(stream); hasher.destroy(); }
     }
   }
 }
 
-async function execute({ inputDirectory, inputFiles: selectedFiles, outputDirectory, profileDirectory, bundleURL }) {
+async function execute({ inputDirectory, inputFiles: selectedFiles, outputDirectory, profileDirectory, bundleURL, workers }) {
   progress({ stage: 'bootstrap', message: 'Verifying and loading shader WASM tools' });
   const { py, sources, manifest, adapter, maxwell, cross } = await bootstrap(bundleURL);
   let inputFiles;
@@ -192,10 +205,10 @@ async function execute({ inputDirectory, inputFiles: selectedFiles, outputDirect
     // Tools are fully initialized. Conversion must not fetch anything, even if
     // a future native subprocess adapter accidentally tries to reach a server.
     globalThis.fetch = () => Promise.reject(new Error('Network is disabled during private shader conversion'));
+    await scanParallel({py,manifest,bundleURL,inputFiles,progress});
     py.runPython('split()');
-    const resultProxy = py.runPython('build()');
-    const result = resultProxy.toJs({ dict_converter: Object.fromEntries }); resultProxy.destroy();
-    const files = [];
+    const result = await buildParallel({ py, manifest, bundleURL, outputDirectory, scratchDirectory, progress, workers });
+    const files = [...result.files];
     progress({ stage: 'write', message: 'Writing MSL, reflection and stamped shader tables' });
     await exportTree(py, '/job/cache/b-' + manifest.chain, outputDirectory, 'shader/cache/b-' + manifest.chain + '/', files);
     await exportTree(py, profile, outputDirectory, 'profile/0100000000010000/', files);
@@ -205,7 +218,7 @@ async function execute({ inputDirectory, inputFiles: selectedFiles, outputDirect
     return output;
   } finally {
     unmount(); scratch.close();
-    await outputDirectory.removeEntry('.shader-work', { recursive: true });
+    await removeScratch(outputDirectory);
   }
 }
 

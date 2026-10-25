@@ -49,7 +49,7 @@ export function allowedRewriter(name) {
     || /^licenses\/[A-Za-z0-9_.-]+$/.test(name);
 }
 export function allowedShader(name) {
-  return new Set(['index.mjs', 'worker.mjs', 'file-fs.mjs', 'adapter.py', 'sources.json', 'CHAIN.json', 'toolchain.json', 'BUILD-META.json', 'NXNATIVE-LICENSE']).has(name)
+  return new Set(['index.mjs', 'worker.mjs', 'build-worker.mjs', 'parallel.mjs', 'page-store.mjs', 'asset-loader.mjs', 'yaz0.mjs', 'packed-output.mjs', 'scan.mjs', 'scan-worker.mjs', 'file-fs.mjs', 'adapter.py', 'sources.json', 'CHAIN.json', 'toolchain.json', 'BUILD-META.json', 'NXNATIVE-LICENSE']).has(name)
     || name === 'lz4-4.4.4-cp313-cp313-pyodide_2025_0_wasm32.whl' || name === 'lzma-1.0.0-cp313-cp313-pyodide_2025_0_wasm32.whl'
     || name.startsWith('pyodide/') && pyodideNames.has(name.slice(8))
     || name.startsWith('maxwell/') && dotnetPath(name.slice(8), new Set(['shader-translator.mjs', 'shader-worker.mjs', 'nxnative.LICENSE', 'Ryujinx.LICENSE.txt']))

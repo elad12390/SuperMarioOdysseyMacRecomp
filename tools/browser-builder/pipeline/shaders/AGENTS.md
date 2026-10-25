@@ -9,3 +9,9 @@
   fixture, not duplicate game data.
 - Keep external/nxnative read-only. Public bundles contain pinned source, public
   profile constants and tool assets only; generated shader tables stay private.
+- Parallel scans must preserve the original aggregation order and initializer
+  context. Complete pixel sources before paired vertex work. Bound worker count,
+  scratch caching and task buffers; collect temporary Python build scopes.
+- Close worker-owned OPFS handles before removing scratch storage. Compare full
+  generated guard table bodies as well as source/reflection bytes after scheduling
+  or proof-parsing changes. Literal-index shortcuts must retain the original math.

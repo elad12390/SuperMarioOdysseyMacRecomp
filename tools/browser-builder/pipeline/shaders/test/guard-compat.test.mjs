@@ -34,7 +34,7 @@ async function fixture() {
   for (const dir of [cache, profile, nativeCache, pinned, path.resolve(game, '../../MacOS')]) await mkdir(dir, { recursive: true });
   await symlink(path.resolve(actualGame, '../../MacOS/dmhost'), path.resolve(game, '../../MacOS/dmhost'));
   const sources = JSON.parse(await readFile(sourcesPath, 'utf8'));
-  for (const name of ['c1_guard.py', 'dmsh_chain.py']) await writeFile(path.join(pinned, name), sources.files.find(f => f.path.endsWith('/' + name)).text);
+  for (const name of ['c1_guard.py', 'cb_extent.py', 'dmsh_chain.py']) await writeFile(path.join(pinned, name), sources.files.find(f => f.path.endsWith('/' + name)).text);
   for (const suffix of ['_b.metal', '_b.json', '_bf.metal']) await copyFile(path.join(actualGame, 'shader/cache/b-' + chain, key + suffix), path.join(cache, key + suffix));
   await writeFile(path.join(profile, 'game.tsv'), sources.profile);
   for (const [name, value] of Object.entries({
@@ -88,6 +88,48 @@ test('fresh unchanged analyzer accepts the real retained BF source and unchanged
   expect(result.additional_base_full_required).toEqual([]);
   expect(result.provenance.passed).toBe(true);
 }), 30000);
+
+test('missing-reflection scheduling preserves the complete real guard body and avoids redundant definitions', async () => withFixture(async f => {
+  const script = path.join(f.directory, 'scheduling-proof.py');
+  await writeFile(script, `import ast, json, multiprocessing, os, re, sys
+adapter, pinned, cache, output = sys.argv[1:]
+sys.path.insert(0, pinned)
+tree = ast.parse(open(adapter).read())
+nodes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name in ('GuardScheduling','ConstantIndexScheduling','SerialExecutor')]
+namespace = {'ast': ast}
+exec(compile(ast.Module(body=nodes, type_ignores=[]), adapter, 'exec'), namespace)
+# Exercise the actual browser executor with the original guard functions.
+multiprocessing.Pool = namespace['SerialExecutor']
+counts = {}
+for tool, scheduling in (('c1_guard.py','GuardScheduling'),('cb_extent.py','ConstantIndexScheduling')):
+    reference = os.path.join(pinned, tool)
+    source = open(reference).read()
+    for mode in ('reference', 'optimized'):
+        parsed = ast.parse(source, filename=reference)
+        if mode == 'optimized': parsed = ast.fix_missing_locations(namespace[scheduling]().visit(parsed))
+        counts.setdefault(mode,0)
+        def profile(frame, event, arg):
+            if event == 'call' and frame.f_code.co_name == 'definitions_of': counts[mode] += 1
+        sys.argv = [reference, cache, output + tool + mode]
+        sys.setprofile(profile)
+        try: exec(compile(parsed, reference, 'exec'), {'__name__':'__main__', '__file__':reference,
+            '_index_uses_definitions':lambda index:re.search(r'\\b_\\d+\\b',index) is not None})
+        finally: sys.setprofile(None)
+    body = lambda name: [s for s in open(name).read().splitlines() if s and not s.startswith('#')]
+    assert body(output+tool+'reference') == body(output+tool+'optimized'), tool
+assert counts['optimized'] < counts['reference'], counts
+print(json.dumps(counts))
+`);
+  const child = Bun.spawn(['uv','run','--no-project','--offline','python',script,
+    path.join(root,'tools/browser-builder/pipeline/shaders/adapter.py'),f.pinned,f.cache,path.join(f.directory,'scheduled-')], {
+    cwd:f.directory,stdout:Bun.file(path.join(f.directory,'scheduling.log')),stderr:Bun.file(path.join(f.directory,'scheduling.stderr')),
+    env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'},
+  });
+  await writeFile(path.join(f.directory,'scheduling.pid'),String(child.pid));
+  const exit=await child.exited;
+  expect(await readFile(path.join(f.directory,'scheduling.stderr'),'utf8')).toBe('');
+  expect(exit).toBe(0);
+}),30000);
 
 test('missing BF guard flag cannot pass even when its body equals the old native table', async () => withFixture(async f => {
   const file = path.join(f.profile, 'c1_full.tsv'), text = await readFile(file, 'utf8');

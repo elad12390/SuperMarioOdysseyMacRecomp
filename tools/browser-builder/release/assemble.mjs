@@ -10,7 +10,7 @@ import { collectLicenses } from './licenses.mjs';
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 export const revision = '0045c1dfb639f9775891382646ad38c2a11c56bf';
 const rewriterWheelHash = '98d2f8ec75fd46f2e99204a38aecdd7d9d00b20c27c2578033dfdf66c993198c';
-const extractorRoots = new Set(['extractor.js', 'browser-io.js', 'extractor-worker.js', 'extractor-client.js', 'THIRD-PARTY-NOTICES.md']);
+const extractorRoots = new Set(['extractor.js', 'browser-io.js', 'extractor-worker.js', 'extractor-client.js', 'romfs-pool.js', 'THIRD-PARTY-NOTICES.md']);
 const corePyodide = ['pyodide.mjs', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json'];
 const sorted = array => array.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 
@@ -56,7 +56,8 @@ async function verifyRewriter(base) {
   return { provenance: sources.provenance, sourceFiles: sources.files.map(({ path, sha256 }) => ({ path, sha256 })), wheels: dependencies, checksumFile: sha256(await readAsset(base, 'SHA256SUMS')) };
 }
 async function verifyShader(base) {
-  await requireFiles(base, ['index.mjs', 'worker.mjs', 'file-fs.mjs', 'adapter.py', 'sources.json', 'CHAIN.json', 'toolchain.json', 'cross/translator.mjs', 'cross/spirv-cross.mjs', 'cross/spirv-cross.wasm', 'cross/SPIRV-Cross.LICENSE', 'maxwell/shader-translator.mjs', 'maxwell/_framework/dotnet.js', ...corePyodide.map(n => 'pyodide/' + n)], 'shader pipeline');
+  const adapterNames = ['adapter.py', 'file-fs.mjs', 'worker.mjs', 'index.mjs', 'page-store.mjs', 'asset-loader.mjs', 'parallel.mjs', 'build-worker.mjs', 'yaz0.mjs', 'packed-output.mjs', 'scan.mjs', 'scan-worker.mjs'];
+  await requireFiles(base, [...adapterNames, 'sources.json', 'CHAIN.json', 'toolchain.json', 'cross/translator.mjs', 'cross/spirv-cross.mjs', 'cross/spirv-cross.wasm', 'cross/SPIRV-Cross.LICENSE', 'maxwell/shader-translator.mjs', 'maxwell/_framework/dotnet.js', ...corePyodide.map(n => 'pyodide/' + n)], 'shader pipeline');
   const manifest = JSON.parse(await readAsset(base, 'toolchain.json')), chain = JSON.parse(await readAsset(base, 'CHAIN.json'));
   if (manifest.format !== 1 || !/^[a-f0-9]{12}$/.test(manifest.chain) || manifest.chain !== chain.chain || JSON.stringify(manifest.identity) !== JSON.stringify(chain.identity)) throw new Error('Invalid shader chain identity');
   if (sha256(Buffer.from('switchrecomp-browser-shader-chain\0' + JSON.stringify(manifest.identity))).slice(0, 12) !== chain.chain) throw new Error('Shader CHAIN.json does not match its identity');
@@ -78,7 +79,7 @@ async function verifyShader(base) {
   const digest = prefix => sha256(Buffer.from(JSON.stringify(manifest.assets.filter(a => a.path.startsWith(prefix)))));
   if (manifest.identity.maxwell_assets !== digest('maxwell/') || manifest.identity.cross_assets !== digest('cross/') || manifest.identity.python_assets !== digest('pyodide/')) throw new Error('Shader component fingerprints do not match the declared assets');
   if (manifest.identity.python_wheels && manifest.identity.python_wheels !== sha256(Buffer.from(JSON.stringify(manifest.assets.filter(a => a.path.endsWith('.whl')))))) throw new Error('Shader wheel fingerprint mismatch');
-  const adapterDigest = sha256(Buffer.from(JSON.stringify(manifest.assets.filter(a => ['adapter.py', 'file-fs.mjs', 'worker.mjs', 'index.mjs'].includes(a.path)))));
+  const adapterDigest = sha256(Buffer.from(JSON.stringify(manifest.assets.filter(a => adapterNames.includes(a.path)))));
   if (manifest.identity.adapter_assets !== adapterDigest || manifest.identity.sources !== sha256(await readAsset(base, 'sources.json'))) throw new Error('Shader adapter/source fingerprints do not match');
   const sources = JSON.parse(await readAsset(base, 'sources.json'));
   verifyEmbeddedSources(sources, 'shader pipeline');

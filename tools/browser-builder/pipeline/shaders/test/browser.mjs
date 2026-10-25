@@ -9,7 +9,8 @@ import { apiChecks } from './api-checks.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../../../..');
 const work = path.join(root, 'tmp/odyssey/browser-shader-chain');
-const ownedProfile = path.join(work, process.env.SHADER_FULL === '1' ? 'stream-proof-profile' : 'sample-profile');
+const parallel = process.env.SHADER_PARALLEL === '1';
+const ownedProfile = path.join(work, process.env.SHADER_FULL === '1' ? 'stream-proof-profile' : parallel ? 'parallel-profile' : 'sample-profile');
 const fixture = JSON.parse(await readFile(path.join(work, 'fixtures.json'), 'utf8'));
 const requests = [], events = [], messages = [];
 const server = createServer(async (request, response) => {
@@ -75,9 +76,13 @@ try {
       const directory = await (await (await outputDirectory.getDirectoryHandle('shader')).getDirectoryHandle('cache')).getDirectoryHandle('b-' + manifest.chain);
       const stamp = await (await (await directory.getFileHandle('inputs.tsv')).getFile()).text();
       const profile = await (await outputDirectory.getDirectoryHandle('profile')).getDirectoryHandle('0100000000010000');
-      const guards = {};
-      for (const name of ['c1_full.tsv', 'cb_extent.tsv']) guards[name] = (await (await (await profile.getFileHandle(name)).getFile()).text()).split('\n')[0];
-      return { manifest, stamp, guards, elapsedMs: performance.now() - started, inputFiles: files.length,
+      const guards = {}, guardBodies = {};
+      for (const name of ['c1_full.tsv', 'cb_extent.tsv']) {
+        const text=await(await(await profile.getFileHandle(name)).getFile()).text();guards[name]=text.split('\n')[0];
+        const body=text.split('\n').filter(s=>s&&!s.startsWith('#')).join('\n')+'\n';
+        guardBodies[name]=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body))),b=>b.toString(16).padStart(2,'0')).join('');
+      }
+      return { manifest, stamp, guards, guardBodies, elapsedMs: performance.now() - started, inputFiles: files.length,
         inputBytes: files.reduce((n, f) => n + f.size, 0), inputCopiedBytes: 0, crossOriginIsolated };
     }, relativeFiles);
     assert.equal(full.crossOriginIsolated, false);
@@ -86,6 +91,11 @@ try {
     assert(full.manifest.files.every(f => !f.path.endsWith('.metallib')));
     assert(full.stamp.includes('inputs\t' + full.manifest.inputs));
     for (const value of Object.values(full.guards)) assert(value.startsWith('# chain b-' + full.manifest.chain + ' inputs ' + full.manifest.inputs + ' '));
+    for(const name of ['c1_full.tsv','cb_extent.tsv']){
+      const baseline=await readFile(path.join(root,'tmp/odyssey/browser-release/generated-1987-acceptance/relocated/Super Mario Odyssey.app/Contents/Resources/game/profile/0100000000010000',name),'utf8');
+      const body=baseline.split('\n').filter(s=>s&&!s.startsWith('#')).join('\n')+'\n';
+      assert.equal(full.guardBodies[name],createHash('sha256').update(body).digest('hex'),'Complete guard table body changed: '+name);
+    }
     const tableChecks = {};
     for (const name of ['shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv']) {
       const native = await readFile(path.join(root, 'game-data/super-mario-odyssey/profile/0100000000010000', name));
@@ -112,12 +122,16 @@ try {
           if (data.type === 'error') reject(new Error(data.message));
           if (data.type === 'result') resolve({ ...data, progress, elapsedMs: performance.now() - started, crossOriginIsolated });
         };
-        worker.postMessage({ fixtures, outputDirectory, bundleURL: new URL('/bundle/', location.href).href });
+        worker.postMessage({ fixtures, outputDirectory, parallel: fixtures.parallel, bundleURL: new URL('/bundle/', location.href).href });
       });
     } finally { worker.terminate(); }
-  }, fixture);
+  }, {...fixture,parallel});
   assert.equal(proof.crossOriginIsolated, false);
   assert.equal(proof.result.shaders, fixture.keys.length);
+  if(parallel){
+    assert(proof.result.batches.some(batch=>batch.packageCacheHits>0),'Immutable package cache was not reused');
+    assert(proof.result.batches.every(batch=>batch.packageCacheBytes<=192*1024*1024),'Package cache exceeded its bound');
+  }
   assert(proof.exported.some(file => file.size > 16 * 1024 * 1024), 'Real large-source streaming export was not exercised');
   assert(proof.files.every(file => !file.name.endsWith('.metallib')));
   for (const [name, expected] of Object.entries({
@@ -162,7 +176,7 @@ try {
   assert(requests.every(r => r.method === 'GET' && !r.body));
   const output = { ...proof, requests, messages };
   output.apiChecks = await apiChecks(page, root);
-  await writeFile(path.join(work, 'single-shader-proof.json'), JSON.stringify(output, null, 2));
+  await writeFile(path.join(work, parallel ? 'parallel-shader-proof.json' : 'single-shader-proof.json'), JSON.stringify(output, null, 2));
   console.log(JSON.stringify({ chain: proof.result.chain, shaders: proof.result.shaders, elapsedMs: proof.elapsedMs, sourceFiles: proof.files.length, scratchBytes: proof.scratchBytes, nonisolated: true, requests: requests.length, noUploads: true }));
   }
 } catch (error) { console.error(messages.join('\n')); throw error; }

@@ -1,8 +1,9 @@
 # Browser shader pipeline
 
-Run the pinned, unchanged nxnative shader splitter and shader build rules serially
-inside one Pyodide worker. Native subprocess calls cross a synchronous JS bridge
-to the real .NET Maxwell translator and SPIRV-Cross WASM in that same worker.
+Run the pinned nxnative shader splitter and shader build rules locally in browser
+WASM. Bound memory and disk operations, and schedule independent conversion work
+across workers while retaining the pixel-before-paired-vertex dependency. Native
+subprocess calls use the real .NET Maxwell translator and SPIRV-Cross WASM.
 The user approved native Metal compilation at first launch; output is honest MSL
 source and reflection, never a fake metallib or bundled Apple compiler.
 
@@ -24,3 +25,12 @@ including original-rule reflection/MSL comparison, table/stamp integrity,
 cancellation/cleanup, unsupported-input rejection and no upload requests.
 
 Fetch source cleanup must preserve final _bf.metal while removing AIR intermediates; shadow and geometry source libraries stay present under their runtime basenames. Final mounted-DMG verification reads actual declared files, validates size/SHA256, and compares all current required source names, canonical JSON, table bodies and input stamps using CPU only. A manifest hash alone cannot establish successful OPFS/DMG writes.
+
+## Build performance
+
+Target a complete cold local NSP-to-DMG build within a few minutes on the M4 Pro.
+Measure each stage; never claim this target from sample conversion alone. A
+bounded scratch cache must coalesce small Python reads/writes without changing
+sparse files, truncation, rename, open-unlink or reused-block zeroing. Decoder and
+worker scheduling optimizations must retain the complete original map/facts/pairs,
+MSL/reflection/guards and chain stamps. No preconverted game data is published.

@@ -49,6 +49,26 @@ export async function generateBrowserProvenance(
   signal?: AbortSignal,
   progress: (event: ProvenanceProgress) => void = () => {},
 ): Promise<DmgEntry> {
+  return renderProvenance(input, signal, progress);
+}
+
+/** Begin the immutable selected-file hash while earlier conversion stages run. */
+export function prepareBrowserProvenance(nsp: File, signal?: AbortSignal) {
+  const pending = hashInput(nsp, signal);
+  // Conversion can fail before packaging. Keep that failure's original error,
+  // while ensuring an abandoned hash rejection is still handled.
+  void pending.catch(() => {});
+  return (input: BrowserProvenanceInput, progress: (event: ProvenanceProgress) => void = () => {}) => {
+    if (input.nsp !== nsp) throw new Error('Prepared provenance belongs to a different selected file.');
+    return renderProvenance(input, signal, progress, pending);
+  };
+}
+
+async function renderProvenance(
+  input: BrowserProvenanceInput, signal: AbortSignal | undefined,
+  progress: (event: ProvenanceProgress) => void,
+  preparedHash?: Promise<string>,
+): Promise<DmgEntry> {
   signal?.throwIfAborted();
   const { nsp, extraction, rewriter, runtimeSource } = input;
   if (!(nsp instanceof File)) throw new Error('Browser provenance requires the selected local NSP File.');
@@ -98,22 +118,9 @@ export async function generateBrowserProvenance(
     signal?.throwIfAborted();
   };
   report('hash', 0);
-  const hash = await createSHA256();
+  const digest = await (preparedHash ?? hashInput(nsp, signal, offset => report('hash', offset)));
   signal?.throwIfAborted();
-  hash.init();
-  const chunkSize = 1024 * 1024;
-  for (let offset = 0; offset < totalBytes;) {
-    signal?.throwIfAborted();
-    const end = Math.min(offset + chunkSize, totalBytes);
-    const bytes = new Uint8Array(await nsp.slice(offset, end).arrayBuffer());
-    signal?.throwIfAborted();
-    if (bytes.length !== end - offset) throw new Error('The selected NSP could not be read completely for provenance.');
-    hash.update(bytes); offset = end;
-    report('hash', offset);
-    if (offset % (16 * chunkSize) === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
-  }
-  signal?.throwIfAborted();
-  const sha256 = hex(hash.digest('hex'), [64], 'input.sha256');
+  const sha256 = hex(digest, [64], 'input.sha256');
   const text = [
     'schema_version = 1', 'asset_scope = "local-generated-game-output"', 'conversion = "browser-wasm"', '',
     '[input]', 'source = "user-selected-local-file"', `filename = ${filename}`,
@@ -123,4 +130,22 @@ export async function generateBrowserProvenance(
   const entry = entryFromBlob('Super Mario Odyssey.app/Contents/Resources/game/provenance.toml', new Blob([text], { type: 'text/plain;charset=utf-8' }));
   report('complete', totalBytes);
   return entry;
+}
+
+async function hashInput(nsp: File, signal?: AbortSignal, progress: (offset: number) => void = () => {}): Promise<string> {
+  signal?.throwIfAborted();
+  if (!(nsp instanceof File)) throw new Error('Browser provenance requires the selected local NSP File.');
+  const hash = await createSHA256();
+  signal?.throwIfAborted(); hash.init();
+  const chunkSize = 1024 * 1024;
+  for (let offset = 0; offset < nsp.size;) {
+    signal?.throwIfAborted();
+    const end = Math.min(offset + chunkSize, nsp.size);
+    const bytes = new Uint8Array(await nsp.slice(offset, end).arrayBuffer());
+    signal?.throwIfAborted();
+    if (bytes.length !== end - offset) throw new Error('The selected NSP could not be read completely for provenance.');
+    hash.update(bytes); offset = end; progress(offset);
+    if (offset % (16 * chunkSize) === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
+  }
+  return hash.digest('hex');
 }

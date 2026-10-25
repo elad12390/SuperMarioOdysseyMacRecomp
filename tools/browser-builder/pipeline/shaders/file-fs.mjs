@@ -1,3 +1,5 @@
+import { cachedStore } from './page-store.mjs';
+
 /** Read-only Emscripten FS backed by local File blobs, read in bounded slices. */
 export function mountFiles(py, mountpoint, files, { chunkBytes = 4 * 1024 * 1024 } = {}) {
   const { FS } = py;
@@ -61,7 +63,8 @@ export function mountFiles(py, mountpoint, files, { chunkBytes = 4 * 1024 * 1024
 }
 
 /** Writable Python scratch files share one block store, never a MEMFS game copy. */
-export function mountScratch(py, mountpoint, access) {
+export function mountScratch(py, mountpoint, rawAccess, options) {
+  const access = cachedStore(rawAccess, options);
   const { FS } = py;
   const blockSize = 4 * 1024;
   let nextBlock = 0;
@@ -148,7 +151,7 @@ export function mountScratch(py, mountpoint, access) {
   };
   FS.mkdirTree(mountpoint);
   FS.mount({ mount: () => create(null, '/', 0o40700) }, {}, mountpoint);
-  return { close() { FS.unmount(mountpoint); access.flush(); access.close(); }, bytes: () => nextBlock };
+  return { close() { try { FS.unmount(mountpoint); } finally { access.close(); } }, bytes: () => nextBlock, stats: access.stats };
 }
 
 export async function directoryFiles(directory, progress = () => {}, prefix = '') {

@@ -32,7 +32,7 @@ export async function run(options, progress = () => {}) {
         } else if (data.type === 'error') finish(reject, new Error(data.message));
         else if (data.type === 'result') finish(resolve, data.manifest);
       };
-      worker.postMessage({ inputDirectory, inputFiles, outputDirectory, profileDirectory, bundleURL });
+      worker.postMessage({ inputDirectory, inputFiles, outputDirectory, profileDirectory, bundleURL, workers: options.workers });
       if (signal?.aborted) abort();
     });
   } catch (error) {

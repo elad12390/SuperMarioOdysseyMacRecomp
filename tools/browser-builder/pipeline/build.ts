@@ -1,30 +1,59 @@
 import { writeDmgToOpfs, entryFromBlob, type DmgEntry } from '../dmg';
 import { sealApp } from '../signing';
-import { generateBrowserProvenance, type BrowserProvenanceInput } from './provenance';
+import { prepareBrowserProvenance, type BrowserProvenanceInput } from './provenance';
 
 export type Stage = 'validate' | 'extract' | 'rewrite' | 'shaders' | 'package' | 'dmg';
 export type Progress = { stage: Stage; message: string; fraction?: number };
-type SourceFile = { path: string; size: number };
+type SourceFile = { path: string; size: number; sha256?: string; storagePath?: string; storageOffset?: number };
 type Template = { format: number; shaderChain: string; source: BrowserProvenanceInput['runtimeSource']; files: { path: string; url: string; size: number; sha256: string; mode: number }[] };
 type Catalog = { format: number; extractor: string; rewriter: string; shaderPipeline: string; shaderOptions: Record<string, unknown>; runtime: string };
 
 const app = 'Super Mario Odyssey.app/Contents/Resources/game/';
+const directories = new WeakMap<FileSystemDirectoryHandle, Map<string, Promise<FileSystemDirectoryHandle>>>();
+const packedStores = new WeakMap<FileSystemDirectoryHandle, Map<string, Promise<FileSystemSyncAccessHandle>>>();
 function parts(path: string) {
   const names = path.split('/');
   if (names.some(name => !name || name === '.' || name === '..' || /[\\\0]/.test(name))) throw new Error('A converter produced an invalid output path.');
   return names;
 }
 async function getFile(root: FileSystemDirectoryHandle, path: string) {
-  const names = parts(path); let directory = root;
-  for (const name of names.slice(0, -1)) directory = await directory.getDirectoryHandle(name);
+  const names = parts(path); let directory = root, prefix = '';
+  let cache = directories.get(root);
+  if (!cache) { cache = new Map(); directories.set(root, cache); }
+  for (const name of names.slice(0, -1)) {
+    prefix += name + '/';
+    let pending = cache.get(prefix);
+    if (!pending) { pending = directory.getDirectoryHandle(name); cache.set(prefix, pending); }
+    directory = await pending;
+  }
   return directory.getFileHandle(names.at(-1)!);
 }
 function sourceEntry(root: FileSystemDirectoryHandle, file: SourceFile, prefix: string): DmgEntry {
   parts(file.path);
-  return { path: prefix + file.path, size: file.size, mode: 0o644, async open() {
-    const handle = await (await getFile(root, file.path)).createSyncAccessHandle(); let offset = 0;
+  if (file.storagePath !== undefined) {
+    parts(file.storagePath);
+    const start=file.storageOffset;
+    if (typeof start!=='number' || !Number.isSafeInteger(start) || start<0 || !Number.isSafeInteger(file.size) || file.size<0 || !Number.isSafeInteger(start+file.size)) throw new Error('Invalid packed shader extent.');
+    return {path:prefix+file.path,size:file.size,mode:0o644,expectedSha256:file.sha256,async open(){
+      let cache=packedStores.get(root);
+      if(!cache){cache=new Map();packedStores.set(root,cache);}
+      let pending=cache.get(file.storagePath!);
+      if(!pending){pending=getFile(root,file.storagePath!).then(handle=>handle.createSyncAccessHandle());cache.set(file.storagePath!,pending);}
+      const handle=await pending;let position=0;
+      if(start+file.size>handle.getSize())throw new Error('Packed shader data is incomplete.');
+      return {read(buffer){const count=Math.min(buffer.length,file.size-position);if(!count)return 0;const read=handle.read(buffer.subarray(0,count),{at:start+position});if(read!==count)throw new Error('Incomplete packed shader read.');position+=read;return read;},close(){}};
+    }};
+  }
+  let fileHandle: Promise<FileSystemFileHandle> | undefined;
+  return { path: prefix + file.path, size: file.size, mode: 0o644, expectedSha256:file.sha256, async open() {
+    fileHandle ??= getFile(root, file.path);
+    const handle = await (await fileHandle).createSyncAccessHandle(); let offset = 0;
     return { read(buffer) { const count = handle.read(buffer, { at: offset }); offset += count; return count; }, close() { handle.close(); } };
   }};
+}
+async function closePackedStores(root:FileSystemDirectoryHandle){
+  const cache=packedStores.get(root);packedStores.delete(root);
+  if(cache)await Promise.allSettled([...cache.values()].map(async pending=>(await pending).close()));
 }
 function staticUrl(path: string, base: URL): URL {
   const url = new URL(path, base);
@@ -67,16 +96,36 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
   const patched = await job.getDirectoryHandle('patched', { create: true });
   const shaderOutput = await job.getDirectoryHandle('graphics', { create: true });
   let active: Stage = 'extract';
+  const provenance = prepareBrowserProvenance(input.nsp, signal);
+  const rewriteController=new AbortController();
+  const abortRewrite=()=>rewriteController.abort(signal.reason);
+  signal.addEventListener('abort',abortRewrite,{once:true});
+  let rewriteJob:Promise<any>|undefined;
+  const beginRewrite=()=>{
+    if(!rewriteJob){
+      rewriteJob=(async()=>{
+        const rewriter=await import(/* @vite-ignore */ staticUrl(catalog.rewriter,catalogUrl).href);
+        const exefs=await extracted.getDirectoryHandle('ExeFS');
+        return rewriter.run({inputDirectory:exefs,outputDirectory:patched,modules:['main','subsdk0','sdk'],signal:rewriteController.signal},
+          (p:{module?:string;fraction?:number})=>{if(active==='rewrite')report({stage:active,message:`Converting ARM64 code${p.module?` · ${p.module}`:''}`,fraction:p.fraction});});
+      })();
+      void rewriteJob.catch(()=>{});
+    }
+    return rewriteJob;
+  };
   try {
     signal.throwIfAborted(); report({ stage: active, message: 'Loading the local WASM extractor…' });
     const extractor = await import(/* @vite-ignore */ staticUrl(catalog.extractor, catalogUrl).href);
-    const extraction = await extractor.run({ nsp: input.nsp, prodKeys: input.prodKeys, titleKeys: input.titleKeys, outputDirectory: extracted, signal }, (p: { phase: string; bytesWritten?: number }) => report({ stage: active, message: p.phase === 'load' ? 'Loading the local WASM extractor…' : `Extracting game files · ${((p.bytesWritten ?? 0) / 1024 ** 3).toFixed(2)} GB written` }));
+    const extraction = await extractor.run({ nsp: input.nsp, prodKeys: input.prodKeys, titleKeys: input.titleKeys, outputDirectory: extracted, signal }, (p: { phase: string; path?:string; bytesWritten?: number }) => {
+      // RomFS follows ExeFS, whose sync handles are already flushed and closed.
+      // Rewriting only reads those immutable modules while extraction continues.
+      if(p.phase==='extract'&&p.path?.startsWith('RomFS/'))beginRewrite();
+      report({ stage: active, message: p.phase === 'load' ? 'Loading the local WASM extractor…' : `Extracting game files · ${((p.bytesWritten ?? 0) / 1024 ** 3).toFixed(2)} GB written` });
+    });
     // The extractor checks decrypted title/build identifiers before writing the
     // payload. Every later stage consumes only this validated local directory.
     signal.throwIfAborted(); active = 'rewrite'; report({ stage: active, message: 'Converting your game’s ARM64 instructions in WASM…' });
-    const rewriter = await import(/* @vite-ignore */ staticUrl(catalog.rewriter, catalogUrl).href);
-    const exefs = await extracted.getDirectoryHandle('ExeFS');
-    const rewritten = await rewriter.run({ inputDirectory: exefs, outputDirectory: patched, modules: ['main', 'subsdk0', 'sdk'], signal }, (p: { module?: string; fraction?: number }) => report({ stage: active, message: `Converting ARM64 code${p.module ? ` · ${p.module}` : ''}`, fraction: p.fraction }));
+    const rewritten = await beginRewrite();
     signal.throwIfAborted(); active = 'shaders'; report({ stage: active, message: 'Reading and translating your game’s shaders…' });
     const shaderPipeline = await import(/* @vite-ignore */ staticUrl(catalog.shaderPipeline, catalogUrl).href);
     const graphics = await shaderPipeline.run({ ...catalog.shaderOptions, inputDirectory: extracted, outputDirectory: shaderOutput, signal }, (p: { message?: string; fraction?: number; completed?: number; total?: number }) => report({ stage: active, message: (p.message ?? 'Translating graphics in WASM…') + (typeof p.completed === 'number' ? ` · ${p.completed.toLocaleString('en-US')}${typeof p.total === 'number' ? ` / ${p.total.toLocaleString('en-US')}` : ''}` : ''), fraction: p.fraction }));
@@ -102,10 +151,11 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
     for (const file of graphics.files as SourceFile[]) entries.push(sourceEntry(shaderOutput, file, app));
     const icon = await iconEntry(extracted); if (icon) entries.push(icon);
     if (!entries.some(entry => entry.path.endsWith('/main.patched.bin')) || !entries.some(entry => entry.path.endsWith('/shader_map.tsv'))) throw new Error('The converters did not produce a complete playable app.');
-    entries.push(await generateBrowserProvenance({ nsp: input.nsp, extraction, rewriter: rewritten, shaderChain: graphics.chain, runtimeSource: template.source }, signal, p => report({ stage: active, message: `Recording local input provenance · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.fraction })));
+    entries.push(await provenance({ nsp: input.nsp, extraction, rewriter: rewritten, shaderChain: graphics.chain, runtimeSource: template.source }, p => report({ stage: active, message: `Recording local input provenance · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.fraction })));
     const sealedEntries = await sealApp(entries, { appName: 'Super Mario Odyssey.app', signal, progress: p => report({ stage: active, message: `Sealing app resources · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.totalBytes ? p.hashedBytes / p.totalBytes : undefined }) });
     signal.throwIfAborted(); active = 'dmg'; report({ stage: active, message: 'Creating your disk image locally…' });
     const result = await writeDmgToOpfs(sealedEntries, job, 'Super Mario Odyssey.dmg', { signal, volumeName: 'Super Mario Odyssey', onProgress: p => report({ stage: active, message: `Creating disk image · ${(p.writtenBytes / 1024 ** 3).toFixed(2)} GB`, fraction: Math.min(p.writtenBytes / p.volumeBytes, 1) }) });
+    await closePackedStores(shaderOutput);
     // Keep only the finished image; reclaim the multi-gigabyte intermediates.
     for (const name of ['extracted', 'patched', 'graphics']) await job.removeEntry(name, { recursive: true });
     const { file: _handle, ...image } = result;
@@ -113,5 +163,9 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
   } catch (error) {
     if (signal.aborted) throw signal.reason;
     throw Object.assign(new Error(error instanceof Error ? error.message : 'The browser build failed.'), { stage: active });
+  } finally {
+    rewriteController.abort();signal.removeEventListener('abort',abortRewrite);
+    await rewriteJob?.catch(()=>{});
+    await closePackedStores(shaderOutput);
   }
 }

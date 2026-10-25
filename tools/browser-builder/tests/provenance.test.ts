@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { generateBrowserProvenance } from '../pipeline/provenance';
+import { generateBrowserProvenance, prepareBrowserProvenance } from '../pipeline/provenance';
 function input(file = new File(['abc'], 'dump.nsp')) { return {
  nsp:file,
  extraction:{titleId:'0100000000010000',version:'1.0.0',mainBuildId:'3ca12dfaaf9c82da064d1698df79cda100000000000000000000000000000000'},
@@ -42,4 +42,16 @@ test('invalid static identifiers and authenticated source URLs fail before hashi
  for(const value of [{...input(),extraction:{...input().extraction,titleId:'bad'}},{...input(),runtimeSource:{...input().runtimeSource,repository:'https://user:password@example.com/repo'}},{...input(),rewriter:{...input().rewriter,modules:[input().rewriter.modules[0],input().rewriter.modules[0]]}}]){
   let calls=0;await expect(generateBrowserProvenance(value,undefined,()=>calls++)).rejects.toThrow();expect(calls).toBe(0);
  }
+});
+test('overlapped input hashing produces identical provenance for the same selected File', async()=>{
+ const value=input(new File([new Uint8Array(3*1048576+19).fill(37)],'overlapped.nsp'));
+ const prepared=prepareBrowserProvenance(value.nsp);
+ const expected=await generateBrowserProvenance(value);
+ expect(await text(await prepared(value))).toBe(await text(expected));
+ expect(()=>prepared(input(new File(['different'],'overlapped.nsp')))).toThrow('different selected file');
+});
+test('an aborted prepared hash cannot be accepted later during packaging', async()=>{
+ const controller=new AbortController(),value=input(new File([new Uint8Array(2*1048576)],'aborted.nsp'));
+ const prepared=prepareBrowserProvenance(value.nsp,controller.signal);controller.abort();
+ await expect(prepared(value)).rejects.toMatchObject({name:'AbortError'});
 });

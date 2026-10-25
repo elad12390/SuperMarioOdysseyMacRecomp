@@ -9,6 +9,8 @@ const args = process.argv.slice(2);
 const option = name => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
 const root = resolve(import.meta.dirname, '../../..'), site = resolve(root, 'tools/browser-builder/dist');
 const nsp = option('--nsp'), keys = option('--keys'), titleKeys = option('--title-keys');
+const maxMinutes=Number(option('--max-minutes')??10);
+if(!Number.isSafeInteger(maxMinutes)||maxMinutes<1||maxMinutes>90)throw new Error('Build deadline must be 1..90 minutes.');
 if (!nsp || !keys) throw new Error('Usage: bun tests/build-real-game.mjs --nsp PATH --keys PATH [--title-keys PATH]');
 // Fail before launching or selecting private inputs unless the complete static
 // release has been assembled. This never treats a site shell as a working build.
@@ -34,11 +36,11 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
   if (!await file.exists()) return new Response('Not found', { status: 404 });
   return new Response(request.method === 'HEAD' ? null : file, { headers: { 'Content-Type': file.type, 'Cache-Control': 'no-store' } });
 }});
-const started = Date.now(); let browser, page, network, outcome;
+const started = Date.now(); let browser, page, network, outcome, readyElapsedMs;
 try {
   browser = await puppeteer.launch({
     executablePath: resolve(process.env.HOME, '.cache/going-up-browsers/chrome-headless-shell/ext/chrome-headless-shell-mac-arm64/chrome-headless-shell'),
-    userDataDir: profile, headless: true, protocolTimeout: 95 * 60 * 1000,
+    userDataDir: profile, headless: true, protocolTimeout: (maxMinutes+5) * 60 * 1000,
     args: ['--no-first-run', '--disable-background-networking'],
   });
   network = await observeBrowserNetwork(browser, new URL(server.url).origin);
@@ -84,7 +86,8 @@ try {
   await page.screenshot({ path: resolve(artifacts, 'selected-inputs.png'), fullPage: true });
   console.log('BROWSER_STORAGE='+JSON.stringify(await page.evaluate(() => navigator.storage.estimate())));
   await page.click('#build');
-  await page.waitForFunction(() => !document.querySelector('#download').hidden || document.querySelector('#status').classList.contains('error'), { timeout: 90 * 60 * 1000, polling: 250 });
+  await page.waitForFunction(() => !document.querySelector('#download').hidden || document.querySelector('#status').classList.contains('error'), { timeout: maxMinutes * 60 * 1000, polling: 250 });
+  readyElapsedMs=Date.now()-started;
   const result = await page.evaluate(() => ({ status: document.querySelector('#status').textContent, failed: document.querySelector('#status').classList.contains('error'), ready: !document.querySelector('#download').hidden, stages: [...document.querySelectorAll('#stages li')].map(item => ({ stage: item.dataset.stage, state: item.className })) }));
   if (result.failed || !result.ready) throw new Error(result.status);
   await page.screenshot({ path: resolve(artifacts, 'completed.png'), fullPage: true });
@@ -97,10 +100,10 @@ try {
   const hash = createHash('sha256'); for await (const chunk of createReadStream(dmg)) hash.update(chunk);
   if (requests.some(request => !['GET', 'HEAD'].includes(request.method) || request.queryLength || request.contentLength && request.contentLength !== '0')) throw new Error('A private-upload or unexpected request was observed.');
   if (network.unexpected().length || network.errors.length) throw new Error('Unexpected browser/worker network traffic or incomplete observation; inspect metadata evidence.');
-  outcome = { passed: true, elapsedMs: Date.now() - started, dmg, bytes: info.size, sha256: hash.digest('hex'), result };
+  outcome = { passed: true, elapsedMs: Date.now() - started, readyElapsedMs, deadlineMinutes:maxMinutes, dmg, bytes: info.size, sha256: hash.digest('hex'), result };
   console.log(`BROWSER_GAME_DMG=${dmg}`);
 } catch (error) {
-  outcome = { passed: false, elapsedMs: Date.now() - started, error: String(error) };
+  outcome = { passed: false, elapsedMs: Date.now() - started, readyElapsedMs, deadlineMinutes:maxMinutes, error: String(error) };
   if (page) await page.screenshot({ path: resolve(artifacts, 'failed.png'), fullPage: true }).catch(() => {});
   throw error;
 } finally {

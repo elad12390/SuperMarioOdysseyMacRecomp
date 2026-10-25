@@ -4,8 +4,8 @@ Publish the complete prepared directory from `tmp/odyssey/browser-shader-chain/b
 Its `index.mjs` exports:
 
 ```js
-await run({inputDirectory, outputDirectory, profileDirectory?, signal?, bundleURL?}, progress);
-// => {chain, inputs, shaders, files: [{path, size, sha256}], provenance, ...}
+await run({inputDirectory, outputDirectory, profileDirectory?, signal?, bundleURL?, workers?}, progress);
+// => {chain, inputs, shaders, files: [{path, size, sha256, storagePath?, storageOffset?}], provenance, ...}
 ```
 
 `inputDirectory` is the extracted root with `ExeFS/main` and `RomFS/`.
@@ -22,10 +22,18 @@ from this user's input. Initial support is exactly Odyssey main build
 
 Output paths are relative to graphics root:
 
-- `shader/cache/b-<chain>/*.metal`, reflection `*.json`, and `inputs.tsv`.
+- Logical `shader/cache/b-<chain>/*.metal`, reflection `*.json`, and `inputs.tsv`.
 - `profile/0100000000010000/*.tsv` including generated shader_map/facts/pairs,
   c1_full and cb_extent, plus game.tsv.
 - `shader-chain.json`: complete per-job output manifest and public provenance.
+
+Source/reflection entries can share an append-only file under `shader/packed/`.
+When an entry has `storagePath`, read exactly `size` bytes at `storageOffset`
+from that physical file. Otherwise read its logical `path`. The final native app
+always contains the ordinary logical files; packed storage is only a browser
+intermediate. The pipeline shares bounded sync readers and closes them before
+cleanup. Resource sealing verifies each declared SHA-256 during its existing
+hash pass, before updating either signing artifact.
 
 Read the runtime's required DMSH_CHAIN from the prepared bundle's `CHAIN.json`.
 `BUILD-META.json` exposes the integration schema directly: `shaderChain`,
@@ -33,7 +41,7 @@ Read the runtime's required DMSH_CHAIN from the prepared bundle's `CHAIN.json`.
 revision and output prefixes. Read that metadata only after bundle preparation
 finishes, and use the same prepared bundle for the runtime and site publication.
 It fingerprints actual verified WASM tools, pinned unchanged Python rule sources,
-the serial/storage adapter and Pyodide. Never use nxnative's native-chain string
+the scheduling/storage adapter and Pyodide. Never use nxnative's native-chain string
 for this backend. Match `graphics.chain` to the native template shaderChain.
 
 Install the pinned Pyodide LZMA wheel once with
@@ -45,8 +53,26 @@ Reuse the ready rewriter Pyodide distribution and Volta's verified public output
 No Apple compiler, font, private shader table or game file enters that bundle.
 
 Progress events include `{stage, message, completed?, total?, fraction?}`.
-The single worker runs real Pyodide plus synchronous Maxwell/Cross WASM calls;
-no SharedArrayBuffer, cross-origin isolation, helper or upload is required.
+Four bounded Pyodide workers precompute independent file scans; the original
+splitter aggregates those results in its original order. Up to twelve build
+workers own their real Pyodide, AOT Maxwell and Cross instances and process
+independent keys, completing pixel sources before paired vertex work. Lower-core
+and memory-limited browsers use fewer workers. Worker messages carry only local
+Files/results. No SharedArrayBuffer, cross-origin isolation, helper or upload is
+required. Temporary Python build scopes are collected between batches, and
+workers explicitly close packed/scratch handles before termination.
+
+The normal default is eight build workers, bounded by available cores; twelve
+is an explicit diagnostic override. Immutable parsed packages are retained in a
+192 MiB LRU per worker. Cache entries hold only record bytes, never the temporary
+Python function/global scope from a batch. Reusing them prevents each batch from
+reading and splitting the same source packages again.
+
+The synchronous bridge accelerates only the Yaz0 container decoder with an
+equivalent bounded typed-array decoder. Native source emission bypasses a
+metallib compile cache that cannot save compilation in this source-only backend.
+Guard analysis avoids constructing definitions when no index can reference a
+temporary, preserving the same interval expressions and table bodies.
 The adapter accepts VS/PS/CS/GS and maps the original `spirv-cross INPUT --version
 450` call to synchronous `cross.translateGlsl`. All three Odyssey GS programs
 continue through unchanged `gs_slice` and `geometry_finish`; topology variants
@@ -69,8 +95,10 @@ the reduced fixture's diagnostic source-record index differ. The API checks
 exercise real split cancellation, cleanup, input/output isolation, existing
 output preservation and invalid-chain rejection.
 
-The final release proof belongs to Main's one integrated fresh NSP-to-DMG run.
-Do not duplicate its extraction or run a second standalone full library.
+Final release acceptance requires an integrated fresh NSP-to-DMG run. Component
+benchmarks must reuse actual File objects, avoid another RomFS copy, and report
+component time separately from the complete build. The browser proof defaults
+to a ten-minute deadline; use an explicit longer budget only for diagnosis.
 
 Before any game/GPU launch, compare the mounted app using local CPU file reads:
 

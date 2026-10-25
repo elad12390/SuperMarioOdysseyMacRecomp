@@ -1,7 +1,9 @@
 """Execution adapters only; shader algorithms remain pinned upstream source."""
 import ast
+import collections
 import concurrent.futures
 import contextlib
+import functools
 import gc
 import hashlib
 import importlib.abc
@@ -10,12 +12,14 @@ import io
 import json
 import multiprocessing
 import os
+import pickle
+import re
 import runpy
 import shutil
 import subprocess
 import sys
 
-from js import shader_process, shader_event, shader_tool_identity
+from js import shader_process, shader_event, shader_tool_identity, shader_decode_yaz0
 
 CONFIG = json.loads(_browser_config)
 SOURCE = '/source/dm/gfx/tools'
@@ -23,6 +27,34 @@ PROFILE = '/job/profile/0100000000010000'
 CHAIN = CONFIG['chain']
 RECORD = 'browser-msl-source-v1; preserve-invariance; first-launch Metal'
 MAX_CANDIDATE = 512 * 1024 * 1024
+SCAN_RESULTS = {}
+_temporary = re.compile(r'\b_\d+\b')
+PACKAGE_CACHE = collections.OrderedDict()
+PACKAGE_CACHE_LIMIT = 192 * 1024 * 1024
+PACKAGE_CACHE_STATS = dict(bytes=0, hits=0, misses=0)
+
+
+def index_uses_definitions(index):
+    return _temporary.search(index) is not None
+
+
+def package_records(path, parse):
+    """Immutable package records survive batches, within a per-worker cap."""
+    if path in PACKAGE_CACHE:
+        PACKAGE_CACHE_STATS['hits'] += 1
+        PACKAGE_CACHE.move_to_end(path)
+        return PACKAGE_CACHE[path][0]
+    PACKAGE_CACHE_STATS['misses'] += 1
+    with open(path, 'rb') as stream:
+        records = tuple(parse(stream.read()))
+    size = sum(map(len, records))
+    if size <= PACKAGE_CACHE_LIMIT:
+        while PACKAGE_CACHE and PACKAGE_CACHE_STATS['bytes'] + size > PACKAGE_CACHE_LIMIT:
+            _, (_, removed) = PACKAGE_CACHE.popitem(last=False)
+            PACKAGE_CACHE_STATS['bytes'] -= removed
+        PACKAGE_CACHE[path] = records, size
+        PACKAGE_CACHE_STATS['bytes'] += size
+    return records
 
 
 def bounded_scan(function, args):
@@ -80,9 +112,14 @@ class SerialExecutor:
 
     def map(self, function, *iterables, **kwargs):
         for index, args in enumerate(zip(*iterables)):
-            result = bounded_scan(function, args[0]) if function.__name__ == 'scan_file' else function(*args)
             if function.__name__ == 'scan_file':
-                event('split', completed=index + 1, file=args[0][1])
+                cached = SCAN_RESULTS.pop(args[0][1], None) if len(args[0]) == 2 else None
+                result = cached if cached is not None else bounded_scan(function, args[0])
+            else:
+                result = function(*args)
+            if function.__name__ == 'scan_file':
+                if cached is None:
+                    event('split', completed=index + 1, file=args[0][1])
             elif function.__name__ == 'fin':
                 event('translate', completed=index + 1, shader=args[0], status=result[1])
             yield result
@@ -110,8 +147,22 @@ class SourceEmission(ast.NodeTransformer):
         return node
 
     def visit_FunctionDef(self, node):
+        if node.name == 'shader_rule_source':
+            # Rule source is immutable for a package in this build. Repeated
+            # inspect.getsource calls otherwise rescan it for every shader.
+            node.decorator_list.append(ast.Name(id='_memoize', ctx=ast.Load()))
         if node.name == 'mac_compile':
             node.body = ast.parse('_emit_source(msl, air, lib)').body
+        elif node.name == 'compile' and [arg.arg for arg in node.args.args] == ['self', 'target', 'msl', 'lib']:
+            # This backend emits text. A native metallib compile cache only
+            # hashes/copies the same text repeatedly and cannot save a compile.
+            node.body = ast.parse('self._compile(target, msl, lib)').body
+        elif node.name == 'publish_cache':
+            # Every browser job is fresh and each key is built once. Keep final
+            # outputs, without duplicating them into a disposable per-key CAS.
+            node.body = [ast.Pass()]
+        elif node.name == 'rec_of':
+            node.body = ast.parse('name, k = loc[key]\nreturn name, _package_records(os.path.join(dm_dir, name), records)[k]').body
         elif node.name == 'compiler_id':
             node.body = ast.parse('return _browser_tool_record').body
         elif node.name == 'fetch_finish':
@@ -133,15 +184,84 @@ class SourceEmission(ast.NodeTransformer):
         return self.generic_visit(node)
 
 
+class ContainerDecoding(ast.NodeTransformer):
+    def visit_FunctionDef(self, node):
+        if node.name == 'yaz0':
+            node.body = ast.parse('return bytes(shader_decode_yaz0(s).to_py())').body
+        return self.generic_visit(node)
+
+
+class GuardScheduling(ast.NodeTransformer):
+    """A missing c1 reflection already makes every nonempty access unproven.
+
+    Keep that conservative result without reparsing an entire variant source to
+    construct definitions that cannot affect it. All available spans still use
+    the original interval proof unchanged.
+    """
+    def visit_FunctionDef(self, node):
+        if node.name == 'proven':
+            node.body[:0] = ast.parse('if span is None: return False').body
+        if node.name == 'main':
+            found = 0
+            for block in ast.walk(node):
+                if not isinstance(block, ast.For):
+                    continue
+                for index, item in enumerate(block.body[:-1]):
+                    following = block.body[index + 1]
+                    if (isinstance(item, ast.Assign) and isinstance(item.value, ast.Call)
+                            and isinstance(item.value.func, ast.Name) and item.value.func.id == 'definitions_of'
+                            and isinstance(following, ast.Assign) and isinstance(following.value, ast.Call)
+                            and isinstance(following.value.func, ast.Name) and following.value.func.id == 'c1_span'):
+                        test = ast.parse('span is None or not any(_index_uses_definitions(i) for i in accesses)', mode='eval').body
+                        item.value = ast.IfExp(test=test, body=ast.Dict(keys=[], values=[]), orelse=item.value)
+                        block.body[index:index + 2] = [following, item]
+                        found += 1
+            if found != 1:
+                raise RuntimeError('Pinned c1 guard scheduling shape changed')
+        return self.generic_visit(node)
+
+
+class ConstantIndexScheduling(ast.NodeTransformer):
+    """Only _<digits> can resolve through definitions_of; literals cannot."""
+    def visit_FunctionDef(self, node):
+        if node.name != 'extents':
+            return node
+        conditions = intervals = 0
+        for item in ast.walk(node):
+            if (isinstance(item, ast.If) and isinstance(item.test, ast.Compare)
+                    and isinstance(item.test.left, ast.Name) and item.test.left.id == 'definitions'):
+                item.test = ast.BoolOp(op=ast.And(), values=[item.test,
+                    ast.Call(func=ast.Name(id='_index_uses_definitions', ctx=ast.Load()),
+                        args=[ast.Name(id='index', ctx=ast.Load())], keywords=[])])
+                conditions += 1
+            if (isinstance(item, ast.Call) and isinstance(item.func, ast.Name) and item.func.id == 'Interval'
+                    and len(item.args) == 1 and isinstance(item.args[0], ast.Name) and item.args[0].id == 'definitions'):
+                item.args[0] = ast.BoolOp(op=ast.Or(), values=[item.args[0], ast.Dict(keys=[], values=[])])
+                intervals += 1
+        if conditions != 1 or intervals != 1:
+            raise RuntimeError('Pinned uniform extent scheduling shape changed')
+        return node
+
+
 def execute(path, argv, *, namespace=None, source_emission=False):
     previous = sys.argv
     sys.argv = list(argv)
     scope = dict(__name__='__main__', __file__=path, _emit_source=emit_source,
+                 _memoize=functools.cache,
+                 shader_decode_yaz0=shader_decode_yaz0,
+                 _index_uses_definitions=index_uses_definitions,
+                 _package_records=package_records,
                  _browser_tool_record=RECORD + '\0' + json.dumps(CONFIG['identity'], sort_keys=True))
     if namespace:
         scope.update(namespace)
     try:
         tree = ast.parse(open(path, encoding='utf-8').read(), filename=path)
+        if path.endswith('/shader_split.py'):
+            tree = ast.fix_missing_locations(ContainerDecoding().visit(tree))
+        if path.endswith('/c1_guard.py'):
+            tree = ast.fix_missing_locations(GuardScheduling().visit(tree))
+        if path.endswith('/cb_extent.py'):
+            tree = ast.fix_missing_locations(ConstantIndexScheduling().visit(tree))
         if source_emission:
             tree = ast.fix_missing_locations(SourceEmission().visit(tree))
         exec(compile(tree, path, 'exec'), scope)
@@ -221,22 +341,30 @@ subprocess.run = process
 
 
 def split():
-    event('split', completed=0)
+    if SCAN_RESULTS:
+        event('tables', message='Generating shader tables from local scan results')
+    else:
+        event('split', completed=0)
     os.makedirs('/job/pkg', exist_ok=True)
     execute(SOURCE + '/shader_split.py', [SOURCE + '/shader_split.py', '/input/RomFS', '/input/ExeFS/main',
             '/job/pkg', PROFILE + '/shader_map.tsv', PROFILE + '/shader_facts.tsv', PROFILE + '/shader_pairs.tsv'])
     # Original splitter produces this empty optional conflict table only on some
     # paths. The build unconditionally opens it; no entries are invented here.
     open(PROFILE + '/shader_map.tsv.conflicts.tsv', 'a').close()
+    SCAN_RESULTS.clear()
     gc.collect()
 
 
-def build():
+def build(keys=None):
     event('translate', completed=0)
-    scope = execute(SOURCE + '/dmsh_build.py', [SOURCE + '/dmsh_build.py', '/job/pkg', '/job/cache'], source_emission=True)
+    scope = execute(SOURCE + '/dmsh_build.py', [SOURCE + '/dmsh_build.py', '/job/pkg', '/job/cache', *(keys or [])], source_emission=True)
     failures = [dict(key=r[0], status=r[1], error=r[2]) for r in scope['res'] if r[1] != 'ok']
     if failures or not scope['res']:
         raise RuntimeError('Shader source build incomplete: ' + json.dumps(failures[:8]))
+    if keys:
+        return dict(chain=CHAIN, inputs=scope['INPUTS'], shaders=len(scope['res']),
+                    packageCache=dict(PACKAGE_CACHE_STATS),
+                    results=[dict(key=r[0], st=r[1], err=r[2]) for r in scope['res']])
     directory = '/job/cache/b-' + CHAIN
     stamp = dmsh_chain.read_stamp(directory)
     if stamp != dict(game='0100000000010000', inputs=dmsh_chain.inputs(dmsh_chain.load_game())):

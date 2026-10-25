@@ -66,6 +66,7 @@ jobs:
           set -euo pipefail
           bun run --cwd tools/browser-builder typecheck
           bun run --cwd tools/browser-builder test
+          bun test ./tools/browser-builder/pipeline/shaders/test/asset-loader.test.mjs ./tools/browser-builder/pipeline/shaders/test/yaz0.test.mjs ./tools/browser-builder/pipeline/shaders/test/parallel.test.mjs
           (cd tools/browser-builder/dmg && bun install --frozen-lockfile && bun test ./test)
       - name: Build static tools and matching ARM64 template
         shell: bash

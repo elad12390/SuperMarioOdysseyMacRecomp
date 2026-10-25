@@ -1,5 +1,6 @@
 import { bootstrap, processBridge, exportTree } from '../worker.mjs';
 import { mountScratch } from '../file-fs.mjs';
+import { buildParallel } from '../parallel.mjs';
 onmessage = async ({ data }) => {
   let scratch;
   try {
@@ -19,7 +20,26 @@ onmessage = async ({ data }) => {
     py.globals.set('_browser_config', JSON.stringify({ chain: manifest.chain, identity: manifest.identity }));
     py.runPython(adapter);
     globalThis.fetch = () => Promise.reject(new Error('Network disabled during real shader proof'));
-    const proxy = py.runPython('build()'); const result = proxy.toJs({ dict_converter: Object.fromEntries }); proxy.destroy();
+    let result;
+    if (data.parallel) {
+      result = await buildParallel({py,manifest,bundleURL:data.bundleURL,outputDirectory:data.outputDirectory,
+        scratchDirectory:await data.outputDirectory.getDirectoryHandle('pool-work',{create:true}),
+        progress:event=>postMessage({type:'progress',event}),workers:3,batchSize:2});
+      // Read the actual pool outputs back through the same reference checks.
+      for (const file of result.files) {
+        let parent=data.outputDirectory;
+        const parts=(file.storagePath??file.path).split('/');
+        for (const name of parts.slice(0,-1))parent=await parent.getDirectoryHandle(name);
+        const actual=await(await parent.getFileHandle(parts.at(-1))).getFile();
+        const bytes=new Uint8Array(await (file.storagePath?actual.slice(file.storageOffset,file.storageOffset+file.size):actual).arrayBuffer());
+        const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+        if(bytes.length!==file.size||sha256!==file.sha256)throw new Error('Actual packed shader extent differs: '+file.path);
+        const target='/job/cache/b-'+manifest.chain+'/'+file.path.split('/').at(-1);
+        py.FS.writeFile(target,bytes);
+      }
+    } else {
+      const proxy = py.runPython('build()'); result = proxy.toJs({ dict_converter: Object.fromEntries }); proxy.destroy();
+    }
     const out = '/job/cache/b-' + manifest.chain;
     const exported = [];
     const exportRoot = await data.outputDirectory.getDirectoryHandle('exported', { create: true });
