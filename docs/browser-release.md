@@ -243,6 +243,12 @@ First-launch compilation and scene loading can pause native input polling. The t
 
 ## Published website verification
 
+The current release is deployed by [Browser release 40231340484](https://github.com/elad12390/SuperMarioOdysseyMacRecomp/actions/runs/40231340484) from code commit `cd6f429`. Both source checks and the complete build/deploy workflow pass. Live reads confirm the refreshed intake page and the same shader chain `ac52475a16e2` in the build catalog, shader tools and native template. The deployed runtime recipe is `7a94fd49dbe6e4f93a605d588bc750dc9dbe27919f14c9a55f862261e749cc18`. The local-only, no-game, no-piracy and Nintendo non-affiliation notices remain visible.
+
+A full cold browser build using the freshly source-built local tools (`8b86866155b2`) reaches a ready DMG in 203,356 ms (3m23s), completing download/checksum verification at 212,320 ms. A read-only mount and strict app signature check pass. All 66,422 declared shader/profile files pass their actual size/SHA-256 checks. All 39,185 MSL files, 27,228 functional reflection records and six table bodies match the previously playable local artifact. The app and mounted-volume icon bytes match. The local and hosted compiler identities are recorded separately; this is local full-game evidence plus live deployment/identity verification.
+
+## Historical published website verification
+
 This section records historical hosted verification for the release run below.
 Local browser timings above do not benchmark hosted network timing.
 

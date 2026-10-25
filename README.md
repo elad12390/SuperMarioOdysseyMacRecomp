@@ -8,7 +8,7 @@ also assembles your DMG. Your game files and keys stay on your device.
 **[Open the browser builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/)**
 
 GitHub Actions rebuilds and publishes the site from `main`. Optimized cold
-local browser runs reached a ready DMG in **3m31s to 3m59s** on this M4 Pro,
+local browser runs reached a ready DMG in **3m23s to 3m59s** on this M4 Pro,
 compared with the original 74.7-minute run. Hosted network timing has not been
 benchmarked. The generated app also passes complete CPU output comparisons and
 all seven relocated native gameplay/audio checks. See the
