@@ -21,6 +21,29 @@ automation scaffolding has been removed.
 
 The [public builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/) is deployed and verified. Checks cover its UI, every hosted tool/runtime file and real browser shader conversion. Separately, the complete local browser-to-gameplay path produced a 7.01 GB DMG whose relocated app passed all seven native gameplay/audio checks.
 
+GitHub Actions rebuilds and publishes the site from `main`. Performance
+measurements here come from local browser runs; hosted network timing has not
+been benchmarked. An optimized cold local browser run reached a ready DMG in
+**3m31s** (211,223 ms), completing download and checksum verification at
+219,135 ms (about 3m39s) for a 7,018,702,180-byte DMG. The prior optimized run measured 268,239 ms to ready
+(4m28s) and 279,485 ms including verification, versus the original 74.7-minute
+baseline. These are observations on this M4 Pro, not a guaranteed build time.
+
+The cold run used a brand-new browser profile and origin with a
+`Cache-Control: no-store` server, with no prior private shaders, caches or
+finished outputs. Its 192 MiB immutable package cache was populated within the
+run. The public WASM tools are precompiled release assets; using them does not
+reuse a prior private build.
+
+The optimized path uses .NET AOT, four extraction workers, and bounded parallel
+shader scanning, conversion, storage and resource sealing. Conversion remains
+local with no game uploads; file digests and sealing integrity checks remain
+required. The cold run passed all six browser stages with no recorded
+failures, browser network errors or console errors. Separate CPU and relocated
+native gameplay/audio checks of this exact output also pass, as recorded below.
+The older measurements in the historical gameplay section remain tied to their
+earlier artifact.
+
 | Surface | Evidence |
 | --- | --- |
 | File intake | Real isolated browser selection and malformed-input rejection pass; no private upload request; desktop/mobile captures inspected. |
@@ -33,11 +56,36 @@ The [public builder](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/) is
 | Native source loading | A real Odyssey MSL shader compiles through Metal with `preserveInvariance`, matching the existing offline precision requirement. |
 | Standalone launcher | Builds for ARM64 and resolves data from its own app bundle, with saves/settings in Application Support rather than this checkout. The actual relocated browser-generated app reaches Cap Kingdom with a fresh private save and responds to walking, jumping and camera controls. |
 | Source checks | The website and native harness pass TypeScript checks. All 11 intake, provenance and real tone/silence cases pass, along with 18 disk-image cases. Native signature, portability and archive checks run against built release assets. |
-| Full conversion and DMG | The real input browser run passed all six stages in 74.7 minutes on this M4 Pro while on battery with other workloads. The 7,012,570,468-byte image passes checksum/mount checks and strict signatures before and after native gameplay. Seven native checks pass with sound and zero viewer-relayed inputs. |
+| Full conversion and DMG | The optimized cold local browser run reaches a ready DMG in 3m31s; download/checksum verification completes at about 3m39s for a 7,018,702,180-byte image. The historical 74.7-minute run, on battery with other workloads, produced the 7,012,570,468-byte image that passed checksum/mount checks, strict signatures and seven native gameplay/audio checks with zero viewer-relayed inputs. Those gameplay results belong to that earlier artifact. |
 
 Acceptance criteria are in
 [`tools/browser-builder/INTENT.md`](../tools/browser-builder/INTENT.md) and
 [the browser build scenarios](../.bdd/features/browser-builder/browser-build.feature).
+
+## Optimized-build acceptance
+
+The cold local run on 2026-10-25 produced chain `bb8f12b1c67c` and input stamp
+`42ed19cb3b13`. The 7,018,702,180-byte downloaded DMG passes `hdiutil verify`,
+read-only mounting and strict code signatures. All 66,422 declared shader/profile
+files pass size/SHA-256 checks; all 39,185 MSL files match the previously playable
+app byte-for-byte. The 27,228 native reflection records, all 19 patched files and
+all 4,636 extracted game files match their verified references. Fresh native
+guard analysis passes. The relocated app retains its valid signature.
+
+Using that relocated app and a fresh private save, all seven native checks pass:
+boot, controllable Cap Kingdom gameplay, walking, jump/landing, camera rotation,
+uncapped rendering and native sound. Inputs travel directly over the native
+socket; the viewer relays zero inputs. The walk covers 1,101.7 units and the jump
+rises 188.9 units. A short 1.984-second warm sample measures 390.6 rendered FPS
+and 120 simulation ticks with zero interpolation restore mismatches; this is not
+a sustained performance guarantee. The final two seconds of native gameplay
+audio measure -40.9 dB mean and -26.7 dB peak.
+
+The first test attempt queried the socket before cold startup was ready; the
+app itself continued booting. That failed recording is retained separately. The
+subsequent recorded run uses a fresh isolated save and passes every action.
+Private reports and recordings stay under `tmp/odyssey/push-optimization/` and
+`tmp/odyssey/harness/`; no generated game data enters the public source or site.
 
 ## Source and output layout
 
@@ -73,7 +121,7 @@ bun run build:release
 bun run dev
 ```
 
-The Pages workflow can be dispatched manually. A push to `main` also runs it when the workflow file itself changes; the path filter avoids starting a full release for unrelated commits and makes initial workflow registration explicit.
+The Pages workflow can be dispatched manually. A push to `main` also runs it for changes to the workflow, browser-builder code or runtime patches. Markdown-only builder changes and unrelated commits do not trigger a full release.
 
 The SPIRV-Cross build requires Emscripten 6.0.13. Its version gate accepts both Homebrew's `6.0.13-git` and the official SDK's `6.0.13 (commit-hash)` banner; adjacent versions remain rejected. The SDK checkout and all 23 pinned Cross source/license hashes are checked separately.
 
@@ -135,9 +183,13 @@ bun tools/browser-builder/tests/job-storage.mjs
 bun tools/browser-builder/tests/release-reuse.mjs --runtime /path/to/public-runtime-template
 ```
 
-The final real-input run observes HTTP metadata on both page and worker targets without retaining request bodies or query values. The static server has no upload endpoint. The real browser run observed 359 static GET requests and zero unexpected requests, observer errors, uploads or browser errors. No quota override was used. The actual downloaded image and native gameplay checks both passed.
+The historical real-input run observes HTTP metadata on both page and worker targets without retaining request bodies or query values. The static server has no upload endpoint. That browser run observed 359 static GET requests and zero unexpected requests, observer errors, uploads or browser errors. No quota override was used. Its downloaded image and native gameplay checks both passed.
 
 ## Native gameplay and retained-source guard validation
+
+The gameplay measurements in this section describe the earlier browser-produced
+DMG. Whole-build CPU output parity for the optimized pipeline does not establish
+a new native gameplay/audio run.
 
 The native acceptance run used only the runtime and converted data copied from the actual browser-produced DMG. It verified 1,102.7 units of walking, a 127.6-unit jump followed by a grounded standing state, camera rotation, uncapped rendering and native gameplay audio. Its two-second warm sample measured 161.7 rendered FPS and 60.07 Hz simulation, with zero interpolation restore mismatches. Median frame interval was 5.59 ms, p95 9.59 ms and maximum 95.20 ms; this short sample is not a sustained-performance guarantee. The final compressed recording contains 61.1 seconds of H.264 720p60 video and native AAC stereo sound. Independent decoded-audio and sampled-frame reviews pass. This is headless native rendering, not a verification of final native-window presentation.
 
@@ -157,6 +209,9 @@ bun tools/browser-builder/pipeline/shaders/test/compare-native.mjs \
 First-launch compilation and scene loading can pause native input polling. The test waits on fresh native samples and gives startup key acknowledgements the remaining startup budget; active gameplay retains the normal short input path. `NativeKeyboard.press` accepts an optional `timeout` without adding a fixed key hold. Landing is verified by original floor height plus the standing state, since the native game retains a small downward gravity velocity on the floor.
 
 ## Published website verification
+
+This section records historical hosted verification for the release run below.
+Local browser timings above do not benchmark hosted network timing.
 
 The release at [SuperMarioOdysseyMacRecomp](https://elad12390.github.io/SuperMarioOdysseyMacRecomp/) was built and deployed by [Browser release 40205394389](https://github.com/elad12390/SuperMarioOdysseyMacRecomp/actions/runs/40205394389).
 
