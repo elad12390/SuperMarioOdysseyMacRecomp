@@ -138,6 +138,17 @@ export async function createActionRecording(
       .ar-action[data-state="done"] .ar-action-meta { color: #a1dbbd; }
       .ar-action[data-state="failed"] .ar-action-meta { color: #ffc5c5; }
       .ar-note { color: #a9bbd1; font-size: 12px; line-height: 1.45; }
+      /* Fit seven actions at the recording height without reducing label sizes. */
+      @media (max-height: 960px) {
+        .ar-sidebar { padding: 18px 12px 14px; gap: 12px; }
+        .ar-actions { gap: 6px; }
+        .ar-action {
+          grid-template-columns: 80px minmax(0, 1fr); gap: 8px;
+          min-height: 72px; padding: 6px 8px;
+        }
+        .ar-thumb, .ar-thumb canvas { width: 80px; height: 45px; }
+        .ar-action-meta { margin-top: 4px; }
+      }
       .ar-current {
         grid-column: 1; grid-row: 1; display: flex; align-items: center; justify-content: space-between;
         gap: 24px; min-width: 0; color: #f1f5fb; pointer-events: none;
