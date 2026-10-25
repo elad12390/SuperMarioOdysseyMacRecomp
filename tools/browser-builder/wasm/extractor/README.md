@@ -100,6 +100,8 @@ dotnet publish tools/browser-builder/wasm/extractor/BrowserExtractor.csproj -c R
   -o tmp/odyssey/browser-extractor/publish -p:RestoreLockedMode=true
 cd tools/browser-builder/wasm/extractor
 bun install --frozen-lockfile
+EXTRACTOR_NSP=/absolute/path/to/base.nsp \
+EXTRACTOR_PROD_KEYS=/absolute/path/to/prod.keys \
 bun tests/browser-proof.mjs
 ```
 
@@ -117,8 +119,8 @@ invocation uses its own profile and writes compact evidence under
 `tmp/odyssey/browser-extractor/tests/<run-id>/`. The default run ID includes the
 process ID; `EXTRACTOR_TEST_ID` may supply a unique descriptive ID.
 
-Override private input locations with `EXTRACTOR_NSP` and
-`EXTRACTOR_PROD_KEYS`. `EXTRACTOR_CHROME` selects a dedicated headless-shell.
+Set both private input locations explicitly with `EXTRACTOR_NSP` and
+`EXTRACTOR_PROD_KEYS`; there are no default game or key paths. `EXTRACTOR_CHROME` selects a dedicated headless-shell.
 `EXTRACTOR_BUNDLE` selects the built/published `wwwroot` directory. Set it to the
 absolute `tmp/odyssey/browser-extractor/publish/wwwroot` path to test the exact
 publication output; the test serves all modules from that directory.
