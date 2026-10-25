@@ -216,11 +216,12 @@ is copied. App sealing precedes reclamation; selected NSPs, keys and Player save
 are never removed. The writer also uses explicit output offsets, retries positive
 partial writes and reports a zero/invalid write with its byte position.
 
-The full real-input Firefox 158.0.1 regression uses a fresh owned headless profile
-with persistence disabled and the natural 10,737,418,240-byte quota. It reaches a
-ready image in 313,924 ms (5m14s), completing download/SHA-256 at 329,090 ms
-(5m29s). The downloaded image is 7,018,870,116 bytes. Sampled peak site usage is
-9,327,642,455 bytes (8.69 GiB), falling to about 7.02 GB with only output retained.
+Two full real-input Firefox 158.0.1 regressions use fresh owned headless profiles
+with persistence disabled and the natural 10,737,418,240-byte quota. They reach a
+ready image in 307,756-313,924 ms (5m08s-5m14s), completing download/SHA-256
+at 323,706-329,090 ms. Each downloaded image is 7,018,870,116 bytes. Maximum
+sampled site usage is 9,353,045,012 bytes (8.71 GiB), falling to about 7.02 GB.
+The final command asserts that only the completed DMG remains in its job.
 No quota override or persistence permission was used; all six stages completed
 and no page errors occurred. macOS verifies the downloaded DMG checksum and
 accepts a read-only mount and the strict app signature. All 66,422 declared
@@ -236,7 +237,10 @@ bun tools/browser-builder/tests/firefox-build.mjs --nsp /path/to/base.nsp --keys
 The test records its owned Firefox PID/profile/endpoint, stage progress, sampled
 storage and final image hash under `tmp/odyssey/opfs-firefox/`, closes that browser
 and removes its private profile. It never connects to an existing Firefox.
-Evidence: `tmp/odyssey/opfs-firefox/2026-10-25T21-05-43.570Z/result.json`.
+Evidence: `tmp/odyssey/opfs-firefox/2026-10-25T21-05-43.570Z/result.json` and
+`tmp/odyssey/opfs-firefox/2026-10-25T21-12-48.206Z/result.json`. Both downloaded
+images pass independent macOS verification; the redundant first image was
+removed after preserving its measurements and verifying the final download.
 
 ## Converter corrections and storage lifecycle
 
@@ -274,9 +278,9 @@ bun tools/browser-builder/pipeline/shaders/test/compare-native.mjs \
 
 First-launch compilation and scene loading can pause native input polling. The test waits on fresh native samples and gives startup key acknowledgements the remaining startup budget; active gameplay retains the normal short input path. `NativeKeyboard.press` accepts an optional `timeout` without adding a fixed key hold. Landing is verified by original floor height plus the standing state, since the native game retains a small downward gravity velocity on the floor.
 
-## Published website verification
+## Source toolchain deployment verification
 
-The current release is deployed by [Browser release 40231340484](https://github.com/elad12390/SuperMarioOdysseyMacRecomp/actions/runs/40231340484) from code commit `cd6f429`. Both source checks and the complete build/deploy workflow pass. Live reads confirm the refreshed intake page and the same shader chain `ac52475a16e2` in the build catalog, shader tools and native template. The deployed runtime recipe is `7a94fd49dbe6e4f93a605d588bc750dc9dbe27919f14c9a55f862261e749cc18`. The local-only, no-game, no-piracy and Nintendo non-affiliation notices remain visible.
+The source toolchain release was deployed by [Browser release 40231340484](https://github.com/elad12390/SuperMarioOdysseyMacRecomp/actions/runs/40231340484) from code commit `cd6f429`. Both source checks and the complete build/deploy workflow pass. Live reads confirm the refreshed intake page and the same shader chain `ac52475a16e2` in the build catalog, shader tools and native template. The deployed runtime recipe is `7a94fd49dbe6e4f93a605d588bc750dc9dbe27919f14c9a55f862261e749cc18`. The local-only, no-game, no-piracy and Nintendo non-affiliation notices remain visible.
 
 A full cold browser build using the freshly source-built local tools (`8b86866155b2`) reaches a ready DMG in 203,356 ms (3m23s), completing download/checksum verification at 212,320 ms. A read-only mount and strict app signature check pass. All 66,422 declared shader/profile files pass their actual size/SHA-256 checks. All 39,185 MSL files, 27,228 functional reflection records and six table bodies match the previously playable local artifact. The app and mounted-volume icon bytes match. The local and hosted compiler identities are recorded separately; this is local full-game evidence plus live deployment/identity verification.
 
