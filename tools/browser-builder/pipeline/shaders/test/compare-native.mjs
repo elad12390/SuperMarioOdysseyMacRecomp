@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyRetainedBfC1 } from './guard-compat.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const work = path.join(root, 'tmp/odyssey/browser-shader-chain');
@@ -64,7 +65,7 @@ function browserJson(value, chain) {
 }
 
 /** Accept the embedded manifest itself or the older {manifest, stamp, guards} proof. */
-export async function compareNative(proof, { gameDirectory, expectedChain, nativeDirectory = nativeGame } = {}) {
+export async function compareNative(proof, { gameDirectory, expectedChain, nativeDirectory = nativeGame, runtimeDirectory, sourceManifestPath } = {}) {
   const manifest = proof.manifest || proof;
   if (!manifest || !/^[0-9a-f]{12}$/.test(manifest.chain) || !Array.isArray(manifest.files)) throw Error('Expected an actual shader-chain manifest');
   const chain = manifest.chain;
@@ -195,25 +196,43 @@ export async function compareNative(proof, { gameDirectory, expectedChain, nativ
     inputsRecomputed = inputHash.digest('hex').slice(0, 12);
     if (inputsRecomputed !== manifest.inputs) issues.push({ reason: 'Actual profile inputs digest differs', expected: manifest.inputs, actual: inputsRecomputed });
   }
-  const manifestMatches = !issues.length && !names.missing.length && !names.extra.length && !names.missingJson.length && !names.extraJson.length &&
+  const nonC1Matches = !issues.length && !names.missing.length && !names.extra.length && !names.missingJson.length && !names.extraJson.length &&
     !msl.mismatches.length && !msl.aliasDepth.length && !reflection.mismatches.length && !reflection.aliasDepth.length &&
     reflection.canonicalMatches === expectedJson.size && stampMatches &&
-    Object.values(tableChecks).every(v => v.exactNative) && Object.values(guardChecks).every(v => v.exactNativeBody && v.stampMatches);
-  return { passed: manifestMatches && actualFileChecks.requested && !actualFileChecks.failures.length && actualFileChecks.checked === files.size,
+    Object.values(tableChecks).every(v => v.exactNative) && guardChecks['cb_extent.tsv'].exactNativeBody &&
+    Object.values(guardChecks).every(v => v.stampMatches);
+  const actualFilesVerified = actualFileChecks.requested && !actualFileChecks.failures.length && actualFileChecks.checked === files.size;
+  const retainedBf = metal.some(file => /_bf\.metal$/.test(file.path));
+  let c1Compatibility;
+  // Always check retained-BF libraries, even if a missing flag made the old table
+  // comparison equal. A historical native table is not their source-derived oracle.
+  if (retainedBf) {
+    c1Compatibility = { passed: false, required: true, issues: ['Current actual-file and non-C1 prerequisites have not passed'] };
+    if (actualFilesVerified && nonC1Matches) {
+      try {
+        c1Compatibility = await verifyRetainedBfC1({ gameDirectory, manifest, runtimeDirectory, sourceManifestPath,
+          nativeC1Path: path.join(profile, 'c1_full.tsv') });
+      } catch (error) { c1Compatibility = { passed: false, required: true, issues: [error.message] }; }
+    }
+  }
+  const c1Accepted = retainedBf ? c1Compatibility?.passed === true : guardChecks['c1_full.tsv'].exactNativeBody;
+  const manifestMatches = nonC1Matches && c1Accepted;
+  return { passed: manifestMatches && actualFilesVerified,
     manifestMatches, actualFileChecks, chain, inputs: manifest.inputs, inputsRecomputed, shaders: manifest.shaders, stageCounts,
     files: files.size, bytes: [...files.values()].reduce((n, f) => n + f.size, 0), required, names, nativeCacheExtras,
-    msl, reflection, tableChecks, guardChecks, stampMatches, issues };
+    msl, reflection, tableChecks, guardChecks, c1Compatibility, stampMatches, issues };
 }
 
 if (import.meta.main) {
   const args = process.argv.slice(2), options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--proof', '--game', '--expected-chain', '--report'].includes(args[i]) || !args[i + 1]) throw Error('Usage: --game /mounted/.../Contents/Resources/game [--proof manifest.json] [--expected-chain CHAIN] [--report own-tmp/report.json]');
+    if (!['--proof', '--game', '--expected-chain', '--report', '--runtime-directory', '--source-manifest'].includes(args[i]) || !args[i + 1]) throw Error('Usage: --game /mounted/.../Contents/Resources/game [--proof manifest.json] [--expected-chain CHAIN] [--runtime-directory build-cache] [--source-manifest sources.json] [--report own-tmp/report.json]');
     options[args[i].slice(2)] = args[i + 1];
   }
   const proofPath = path.resolve(options.proof || (options.game ? path.join(options.game, 'shader-chain.json') : path.join(work, 'full-library-proof.json')));
   const proof = JSON.parse(await readFile(proofPath, 'utf8'));
-  const result = await compareNative(proof, { gameDirectory: options.game && path.resolve(options.game), expectedChain: options['expected-chain'] });
+  const result = await compareNative(proof, { gameDirectory: options.game && path.resolve(options.game), expectedChain: options['expected-chain'],
+    runtimeDirectory: options['runtime-directory'], sourceManifestPath: options['source-manifest'] });
   const report = path.resolve(options.report || path.join(work, 'native-comparison-report.json'));
   if (!report.startsWith(work + path.sep) || report === proofPath) throw Error('Comparison report must stay in the owned tmp directory and preserve its input proof');
   await writeFile(report, JSON.stringify(result, null, 2) + '\n');
@@ -221,6 +240,8 @@ if (import.meta.main) {
     actualFileFailures: result.actualFileChecks.failures.length, files: result.files, bytes: result.bytes, mslFiles: result.msl.total,
     mslBytes: result.msl.bytes, required: result.required, missingNames: result.names.missing.length, extraNames: result.names.extra.length,
     exactNativeMsl: result.msl.exactNativeSource, depthAliasMsl: result.msl.aliasDepth.length, canonicalJson: result.reflection.canonicalMatches,
-    depthAliasJson: result.reflection.aliasDepth.length, unresolved: result.msl.mismatches.length + result.reflection.mismatches.length + result.issues.length, report }));
+    depthAliasJson: result.reflection.aliasDepth.length, historicalNativeC1BodyExact: result.guardChecks['c1_full.tsv'].exactNativeBody,
+    c1CompatibilityPassed: result.c1Compatibility?.passed, c1CompatibilityIssues: result.c1Compatibility?.issues,
+    unresolved: result.msl.mismatches.length + result.reflection.mismatches.length + result.issues.length, report }));
   if (!result.passed) process.exitCode = 1;
 }
