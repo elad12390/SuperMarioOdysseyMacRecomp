@@ -119,7 +119,8 @@ export async function assemble(options) {
   if (!nugetAssets?.extractor || !nugetAssets?.shaders) throw new Error('Both actual NuGet project.assets.json files are required');
   const root = options.repoRoot ?? repoRoot, output = path.resolve(outDir);
   const original = await exists(output);
-  if (original && (!original.isDirectory() || !(await exists(path.join(output, '.browser-tools.json'))))) {
+  if (original && (!original.isDirectory() ||
+    (!(await exists(path.join(output, 'browser-tools.json'))) && !(await exists(path.join(output, '.browser-tools.json')))))) {
     if (!original.isDirectory() || (await readdir(output)).length) throw new Error('Refusing to replace an unowned nonempty output directory');
   }
   for (const source of [extractorWwwroot, rewriterBundle, shaderPipelineBundle]) if (path.resolve(source) === output || path.resolve(source).startsWith(output + path.sep) || output.startsWith(path.resolve(source) + path.sep)) throw new Error('Release output must be separate from stage inputs');
@@ -138,7 +139,7 @@ export async function assemble(options) {
     if (sha256(program) !== translatorPins.originalProgramSha256) throw new Error('Original linked translator no longer matches its source pin');
     const extractorLock = await readFile(path.join(root, 'tools/browser-builder/wasm/extractor/packages.lock.json'));
     await put(temporary, 'sources.json', jsonBytes({ format: 1, nxnative: revision, rewriter, shaders, translatorPins, extractorNugetLockSha256: sha256(extractorLock), recipes, dependencyInventorySha256: sha256(await readFile(path.join(temporary, 'dependencies.json'))) }));
-    await put(temporary, '.browser-tools.json', jsonBytes({ format: 1, kind: 'switchrecomp-public-browser-tools' }));
+    await put(temporary, 'browser-tools.json', jsonBytes({ format: 1, kind: 'switchrecomp-public-browser-tools' }));
     const files = [];
     for (const name of await listFiles(temporary)) {
       const bytes = await readAsset(temporary, name);

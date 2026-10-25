@@ -78,6 +78,7 @@ jobs:
           bun run --cwd tools/browser-builder/signing test
           bun test ./tools/browser-builder/runtime/tests/portable.test.ts
           bun tools/browser-builder/tests/release-reuse.mjs --runtime "$SWITCHRECOMP_RUNTIME_PUBLIC"
+          PUBLIC_MARKER_ASSET_ROOT="$PWD/tmp/odyssey/browser-release-tools/build-root" bun tools/browser-builder/release/tests/public-marker.test.mjs
       - name: Upload only public static artifacts
         uses: actions/upload-pages-artifact@v4
         with:

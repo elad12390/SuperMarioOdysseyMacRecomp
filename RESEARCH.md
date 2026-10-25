@@ -295,3 +295,5 @@ Needed research:
 ## GitHub workflow registration
 
 - [GitHub Community: workflows omitted after initial repository push](https://github.com/orgs/community/discussions/179439) - Firsthand report of manual workflow indexing during new-repository/default-branch initialization. This is context for deployment diagnosis; the release workflow also has a narrowly scoped push trigger on its own file.
+
+- [GitHub Pages artifact action source](https://github.com/actions/upload-pages-artifact/blob/v4/action.yml) - The archive step excludes dotfiles. Public files named in a checksum manifest must use ordinary names; the archive regression applies the same GNU tar filter.
