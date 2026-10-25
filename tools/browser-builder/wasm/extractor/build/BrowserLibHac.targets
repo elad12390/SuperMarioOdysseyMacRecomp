@@ -1,0 +1,63 @@
+<Project>
+  <!-- Build-time tool adaptation only. No native helper ships or processes a
+       user's game. Original NuGet files remain read-only and unchanged. -->
+  <UsingTask TaskName="PatchBrowserLibHac" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Reference Include="$(PkgMono_Cecil)/lib/netstandard2.0/Mono.Cecil.dll" />
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="Mono.Cecil" />
+      <Using Namespace="Mono.Cecil.Cil" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        using (var assembly = AssemblyDefinition.ReadAssembly(Source))
+        {
+          var module = assembly.MainModule;
+          var browser = new AssemblyNameReference("BrowserExtractor", new Version(1, 0, 0, 0));
+          module.AssemblyReferences.Add(browser);
+          var provider = new TypeReference("SwitchRecomp.Browser", "ManagedAes", module, browser);
+          int changed = 0;
+          foreach (var type in module.GetTypes())
+          foreach (var method in type.Methods.Where(m => m.HasBody))
+          foreach (var instruction in method.Body.Instructions)
+          {
+            var target = instruction.Operand as MethodReference;
+            if (target == null || target.DeclaringType.FullName != "System.Security.Cryptography.Aes" || target.Name != "Create") continue;
+            if (instruction.OpCode != OpCodes.Call || target.Parameters.Count != 0)
+              throw new InvalidOperationException("Unexpected LibHac AES factory signature.");
+            instruction.Operand = new MethodReference("Create", target.ReturnType, provider) { HasThis = false };
+            changed++;
+          }
+          if (changed == 0) throw new InvalidOperationException("Pinned LibHac has no expected AES factory call sites.");
+          Directory.CreateDirectory(Path.GetDirectoryName(Destination));
+          using (var candidate = new MemoryStream())
+          {
+            assembly.Write(candidate);
+            byte[] bytes = candidate.ToArray();
+            if (!File.Exists(Destination) || !File.ReadAllBytes(Destination).SequenceEqual(bytes))
+              File.WriteAllBytes(Destination, bytes);
+          }
+          Log.LogMessage(Microsoft.Build.Framework.MessageImportance.High,
+            "LibHac browser adaptation: {0} AES factory calls use managed WASM AES.", changed);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="UseBrowserLibHac" AfterTargets="ResolveAssemblyReferences">
+    <PropertyGroup>
+      <BrowserLibHacPath>$(IntermediateOutputPath)libhac-browser/LibHac.dll</BrowserLibHacPath>
+    </PropertyGroup>
+    <PatchBrowserLibHac Source="$(PkgLibHac)/lib/net7.0/LibHac.dll" Destination="$(BrowserLibHacPath)" />
+    <ItemGroup>
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'LibHac'" />
+      <ReferencePath Include="$(BrowserLibHacPath)" />
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Filename)' == 'LibHac'" />
+      <ReferenceCopyLocalPaths Include="$(BrowserLibHacPath)" DestinationSubDirectory="" />
+    </ItemGroup>
+  </Target>
+</Project>

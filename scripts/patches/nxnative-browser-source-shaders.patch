@@ -1,0 +1,23 @@
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 8eda46b..b4f7ab0 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -1,3 +1,4 @@
++#import "source-shaders.h"
+ // Metal execution layer of the NVN null device, see nvn_mtl.h.
+ #import <Metal/Metal.h>
+ #import <QuartzCore/CAMetalLayer.h>
+@@ -3003,6 +3004,13 @@ static void pso_user_record(const char *fmt, ...) {
+ static __thread int t_lib_layer;
+ static id<MTLLibrary> lib_from_file(NSString *path, NSError **err) {
+     int fd = open(path.fileSystemRepresentation, O_RDONLY); struct stat st;
++    const char *source_mode = getenv("DM_MSL_SOURCE");
++    if (fd < 0 && errno == ENOENT && source_mode && strcmp(source_mode, "1") == 0) {
++        BOOL layer = NO;
++        id<MTLLibrary> library = sr_compile_metal_source(g_dev, path, &layer, err);
++        t_lib_layer = layer;
++        return library;
++    }
+     if (fd < 0 || fstat(fd, &st) || st.st_size <= 0) { if (fd >= 0) close(fd); if (err) *err = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"cannot open %@", path]}]; return nil; }
+     size_t len = (size_t)st.st_size; void *m = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0); close(fd);
+     t_lib_layer = m != MAP_FAILED && memmem(m, len, "render_target_array_index", 25) != NULL;   // the library's functions use the layer: for a vertex library, its output (shader_load)

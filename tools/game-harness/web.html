@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Odyssey native game harness</title>
+  <script>if (new URLSearchParams(location.search).get("view") === "game") document.documentElement.classList.add("game-view");</script>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #0d1118; color: #edf1f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1328px; margin: auto; padding: 24px; }
+    header, .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+    header { justify-content: space-between; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 22px; font-weight: 650; }
+    p { margin: 8px 0; }
+    a { color: #99caff; }
+    button { min-height: 38px; border: 1px solid #46536a; border-radius: 6px; padding: 7px 14px; background: #202c3f; color: inherit; font: inherit; cursor: pointer; }
+    button:hover { background: #2b3d57; }
+    button:disabled { opacity: .6; cursor: wait; }
+    button:focus-visible, #game-frame:focus-visible { outline: 2px solid #99caff; outline-offset: 3px; }
+    #status { margin: 12px 0; color: #b7c7dc; font-variant-numeric: tabular-nums; }
+    .viewport { display: grid; place-items: center; background: #000; aspect-ratio: 16 / 9; }
+    #game-frame { display: block; width: 100%; height: 100%; aspect-ratio: 16 / 9; object-fit: contain; }
+    #game-frame:not([data-frame]) { visibility: hidden; }
+    .controls { margin-top: 16px; padding: 12px 16px; background: #151e2c; border-radius: 6px; color: #b7c7dc; }
+    kbd { color: #edf1f7; font: 13px ui-monospace, monospace; white-space: nowrap; }
+    #error { position: fixed; z-index: 2; bottom: 16px; left: 16px; right: 16px; margin: 0 auto; max-width: 960px; padding: 10px 14px; border: 1px solid #d76c72; border-radius: 6px; background: #411c24; color: #ffe8ea; overflow-wrap: anywhere; }
+    #error[hidden] { display: none; }
+    .game-view, .game-view body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    .game-view main { display: grid; place-items: center; width: 100vw; height: 100vh; max-width: none; padding: 0; }
+    .game-view header, .game-view .toolbar, .game-view #status, .game-view .controls { display: none; }
+    .game-view .viewport { width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); }
+  </style>
+</head>
+<body>
+  <main>
+    <header><h1>Odyssey native game harness</h1><a href="?view=game">Game viewport</a></header>
+    <div class="toolbar">
+      <button id="start-headless" type="button">Start headless</button>
+      <button id="start-window" type="button">Start window</button>
+      <button id="stop" type="button">Stop</button>
+      <button id="release" type="button">Release input</button>
+    </div>
+    <p id="status" role="status">Connecting to native game...</p>
+    <div class="viewport"><canvas id="game-frame" width="1280" height="720" tabindex="0" aria-label="Native Odyssey frame"></canvas></div>
+    <div class="controls">
+      <p><kbd>W A S D</kbd> move &nbsp; <kbd>Arrow keys</kbd> camera &nbsp; <kbd>J K U I</kbd> A / B / X / Y</p>
+      <p><kbd>Q E</kbd> L / R &nbsp; <kbd>Z C</kbd> ZL / ZR &nbsp; <kbd>Enter / Tab</kbd> Plus / Minus &nbsp; <kbd>Space</kbd> shake</p>
+      <p>Input goes to the native controller. The test script uses direct native IPC; this page can be a passive viewer.</p>
+    </div>
+  </main>
+  <p id="error" role="alert" hidden></p>
+  <script type="module">
+    const nativeViewer = new URLSearchParams(location.search).get("native") === "1";
+    const frame = document.querySelector("#game-frame");
+    const statusText = document.querySelector("#status");
+    const errorText = document.querySelector("#error");
+    const buttonKeys = { KeyJ: "A", KeyK: "B", KeyU: "X", KeyI: "Y", KeyQ: "L", KeyE: "R", KeyZ: "ZL", KeyC: "ZR", KeyF: "LS", KeyG: "RS", Enter: "Plus", Tab: "Minus", Space: "Shake" };
+    const stickKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"]);
+    const held = new Set();
+    const pulses = new Map();
+    const temporarySticks = { left: null, right: null };
+    const empty = () => ({ buttons: [], leftStick: { x: 0, y: 0 }, rightStick: { x: 0, y: 0 } });
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    let manual = empty();
+    let inputQueue = Promise.resolve();
+
+    function showError(error) {
+      errorText.textContent = error instanceof Error ? error.message : String(error);
+      errorText.hidden = false;
+    }
+
+    async function api(path, body) {
+      try {
+        const response = await fetch(path, body === undefined ? { cache: "no-store", signal: AbortSignal.timeout(20000) } : {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
+        });
+        const text = await response.text();
+        let value;
+        try { value = JSON.parse(text); }
+        catch { throw new Error(`${path}: HTTP ${response.status}, invalid JSON: ${text.slice(0, 160)}`); }
+        if (!response.ok || value.error) throw new Error(`${path}: ${value.error || `HTTP ${response.status}`}`);
+        return value;
+      } catch (error) { showError(error); throw error; }
+    }
+
+    function renderStatus(status) {
+      frame.dataset.running = String(status.running);
+      if (!status.running) delete frame.dataset.frame;
+      statusText.textContent = status.running
+        ? `Running · PID ${status.pid} · frame ${status.native?.frame ?? "pending"} · input reads ${status.native?.reads ?? "pending"}`
+        : "Stopped";
+      return status;
+    }
+
+    function axis(negative, positive) { return Number(held.has(positive)) - Number(held.has(negative)); }
+    function keyboardStick(left) {
+      return left ? { x: axis("KeyA", "KeyD"), y: axis("KeyS", "KeyW") }
+        : { x: axis("ArrowLeft", "ArrowRight"), y: axis("ArrowDown", "ArrowUp") };
+    }
+    function currentInput() {
+      const buttons = new Set(manual.buttons);
+      for (const code of held) if (buttonKeys[code]) buttons.add(buttonKeys[code]);
+      for (const [button, tokens] of pulses) if (tokens.size) buttons.add(button);
+      const stick = side => {
+        const keys = side === "left" ? ["KeyW", "KeyA", "KeyS", "KeyD"] : ["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"];
+        return keys.some(code => held.has(code)) ? keyboardStick(side === "left") : temporarySticks[side]?.value ?? manual[`${side}Stick`];
+      };
+      return { buttons: [...buttons], leftStick: stick("left"), rightStick: stick("right") };
+    }
+    function submitInput() {
+      const input = currentInput();
+      const request = inputQueue.catch(() => {}).then(() => api("/api/input", input)).then(renderStatus);
+      inputQueue = request;
+      request.catch(showError);
+      return request;
+    }
+    function clearInput() {
+      held.clear(); pulses.clear(); temporarySticks.left = temporarySticks.right = null; manual = empty();
+    }
+    function validDuration(ms) {
+      if (!Number.isFinite(ms) || ms < 0) throw new Error("Input duration must be a nonnegative number of milliseconds");
+    }
+
+    window.game = {
+      async status() { await inputQueue; return renderStatus(await api("/api/status")); },
+      async start(options = {}) {
+        clearInput();
+        await inputQueue.catch(showError);
+        renderStatus(await api("/api/start", options));
+        const status = await submitInput();
+        frame.focus();
+        return status;
+      },
+      async stop() { await this.release(); return renderStatus(await api("/api/stop", {})); },
+      setInput(input) {
+        clearInput();
+        manual = { buttons: [...(input.buttons ?? [])], leftStick: { ...(input.leftStick ?? { x: 0, y: 0 }) }, rightStick: { ...(input.rightStick ?? { x: 0, y: 0 }) } };
+        return submitInput();
+      },
+      release() { clearInput(); return submitInput(); },
+      async press(button, durationMs = 150) {
+        validDuration(durationMs);
+        const buttons = Array.isArray(button) ? button : [button];
+        const token = Symbol();
+        for (const name of buttons) {
+          if (!pulses.has(name)) pulses.set(name, new Set());
+          pulses.get(name).add(token);
+        }
+        try { await submitInput(); await delay(durationMs); }
+        finally {
+          for (const name of buttons) pulses.get(name)?.delete(token);
+          await submitInput();
+        }
+        return this.status();
+      },
+      async stick(side, x, y, durationMs) {
+        if (side !== "left" && side !== "right") throw new Error("Stick must be 'left' or 'right'");
+        if (![x, y].every(value => Number.isFinite(value) && Math.abs(value) <= 1)) throw new Error("Stick axes must be between -1 and 1");
+        if (durationMs === undefined) {
+          temporarySticks[side] = null;
+          manual[`${side}Stick`] = { x, y };
+          return submitInput();
+        }
+        validDuration(durationMs);
+        const action = { value: { x, y } };
+        temporarySticks[side] = action;
+        try { await submitInput(); await delay(durationMs); }
+        finally {
+          if (temporarySticks[side] === action) temporarySticks[side] = null;
+          await submitInput();
+        }
+        return this.status();
+      },
+      async screenshot(name = "capture") {
+        await inputQueue;
+        return api("/api/screenshot", { name });
+      },
+      async flush() { await inputQueue; },
+    };
+
+    for (const type of ["keydown", "keyup"]) addEventListener(type, event => {
+      if (nativeViewer) return;
+      if (!buttonKeys[event.code] && !stickKeys.has(event.code)) return;
+      event.preventDefault();
+      if (event.repeat) return;
+      if (type === "keydown") held.add(event.code); else held.delete(event.code);
+      submitInput().catch(showError);
+    });
+    addEventListener("blur", () => { if (!nativeViewer) window.game.release().catch(showError); });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && !nativeViewer) window.game.release().catch(showError);
+    });
+    addEventListener("pagehide", () => {
+      clearInput();
+      if (!nativeViewer) fetch("/api/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(empty()), keepalive: true }).catch(showError);
+    });
+    frame.addEventListener("click", () => frame.focus());
+    for (const [id, action] of [
+      ["start-headless", () => window.game.start({ headless: true })],
+      ["start-window", () => window.game.start({ headless: false })],
+      ["stop", () => window.game.stop()], ["release", () => window.game.release()],
+    ]) document.getElementById(id).addEventListener("click", async event => {
+      event.currentTarget.disabled = true;
+      try { errorText.hidden = true; await action(); }
+      catch (error) { showError(error); }
+      finally { document.getElementById(id).disabled = false; }
+    });
+
+    const context = frame.getContext("2d", { alpha: false });
+    let pending = null, drawing = false, disposed = false;
+    async function drawFrames() {
+      if (drawing) return;
+      drawing = true;
+      try {
+        while (pending) {
+          const packet = pending; pending = null;
+          const meta = new DataView(packet);
+          const bitmap = await createImageBitmap(new Blob([packet.slice(16)], { type: "image/jpeg" }));
+          context.drawImage(bitmap, 0, 0, frame.width, frame.height); bitmap.close();
+          frame.dataset.frame = String(meta.getBigUint64(0, true));
+          const detail = { frame: Number(meta.getBigUint64(0, true)), timestamp: Number(meta.getBigUint64(8, true)) / 1e6,
+            received: performance.now() };
+          frame.dispatchEvent(new CustomEvent("frame", { detail }));
+        }
+      } catch (error) { showError(error); }
+      finally { drawing = false; }
+    }
+    function connectStream() {
+      const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/stream`);
+      socket.binaryType = "arraybuffer";
+      socket.onmessage = event => { pending = event.data; drawFrames(); };
+      socket.onclose = () => { if (!disposed) setTimeout(connectStream, 500); };
+      addEventListener("pagehide", () => { disposed = true; socket.close(); }, { once: true });
+    }
+    async function refreshStatus() {
+      try { await window.game.status(); } catch (error) { showError(error); }
+      if (!disposed) setTimeout(refreshStatus, 1000);
+    }
+    connectStream(); refreshStatus();
+  </script>
+</body>
+</html>

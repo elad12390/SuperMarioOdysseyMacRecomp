@@ -1,0 +1,10 @@
+Embedded hash-wasm 4.12.0 SHA implementation notices
+
+SHA-1: SHA-1 in C, by Steve Reid. 100% Public Domain.
+Modified for hash-wasm by Dani Biro (MIT project license).
+Source: https://github.com/Daninet/hash-wasm/blob/v4.12.0/src/sha1.c
+
+SHA-256 source notice:
+Source: https://github.com/Daninet/hash-wasm/blob/v4.12.0/src/sha256.c
+
+/* sha256.c - an implementation of SHA-256/224 hash functions * based on FIPS 180-3 (Federal Information Processing Standart). * * Copyright (c) 2010, Aleksey Kravchenko  * * Permission to use, copy, modify, and/or distribute this software for any * purpose with or without fee is hereby granted. * * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH * REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY * AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, * INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE * OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR * PERFORMANCE OF THIS SOFTWARE. * Modified for hash-wasm by Dani Biró */

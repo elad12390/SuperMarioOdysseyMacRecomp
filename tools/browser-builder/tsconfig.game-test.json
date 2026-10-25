@@ -1,0 +1,6 @@
+{
+  "extends": "../game-harness/tsconfig.json",
+  "include": [
+    "tests/play-generated.ts"
+  ]
+}

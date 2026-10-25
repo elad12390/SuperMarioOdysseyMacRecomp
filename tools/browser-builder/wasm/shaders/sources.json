@@ -1,0 +1,50 @@
+{
+  "dotnetSdk": "10.0.402",
+  "dotnetWasmRuntime": "10.0.13",
+  "nxnativeRevision": "0045c1dfb639f9775891382646ad38c2a11c56bf",
+  "originalProgramSha256": "c2165aa2c1ccd980d3771f7ff6c19a419faf2944348719eee236d4f29848d8da",
+  "originalProjectSha256": "5374a7e2d3f637cedcbf01081a0e64dbd0fd969857adf2dc3a2be9d185e8712d",
+  "spirvCross": {
+    "repository": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+    "tag": "vulkan-sdk-1.4.363.0",
+    "revision": "f11ba9f0b21ba8fc15153d50a2a1ae31ab1cf8f7",
+    "license": "Apache-2.0 AND MIT AND CC-BY-4.0 AND MIT-Khronos-old",
+    "sourceTree": "85495d43955e3764051db37c9c974e298583de21",
+    "archiveSha256": "f708982e88b763ef5b0394ed468fc2c3628f68cdab89f2e7a946cd628c04e721",
+    "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "sourceFilesSha256": {
+      "GLSL.std.450.h": "6f56e094663fded4435ab1d3d8c24d72adb3bf82832fc002ecf0a0d4d96543e9",
+      "NonSemanticShaderDebugInfo100.h": "f22e8ce116c326c81ad4d0cc99b8da7b95f8fb800de77c11f7129bd04d251299",
+      "spirv_cfg.cpp": "e565ab177ae4531db893917951d9ac4f1135799ee5bee384c8ad879de564a596",
+      "spirv_cfg.hpp": "75f5f76b2c2d5ad0bcae1dafe0cabf589df544cc0a7a5d254d29115cfb991b4a",
+      "spirv_common.hpp": "ce6d77efebee0764f1747ee5e9acd3c57ed2642223a405c13dac453dd169e64d",
+      "spirv_cross_containers.hpp": "81c28e562046fc518a57be4e7eb9af836d3b05a6d9fb3f766a671638c275441f",
+      "spirv_cross_error_handling.hpp": "af7ceaa02741ed3cb9a8c8dd347d428f7a27f82d41ac57dbc5ad0dbaab8a368f",
+      "spirv_cross_parsed_ir.cpp": "eaff0515a162c50b96caf67fd5bfa59294c4b4404d742740905d0c4f9405102c",
+      "spirv_cross_parsed_ir.hpp": "a724e129d3d1ba8b0bda3ee48cbf7d19bcc5d380b280269f33e0396080b3d808",
+      "spirv_cross.cpp": "5f33e6e22607c6dbaf0a285423d790900843ad973037f1f898e9b0c456ebb65f",
+      "spirv_cross.hpp": "503ad44a4bb5a2e71b7ac624804f2d2f9d73b73b94c2ed59593b02b165376bf8",
+      "spirv_glsl.cpp": "7f211747e8e879700119baa7bdd05dc2103e70b5aec297bf751ecc5a3ba3e1c5",
+      "spirv_glsl.hpp": "c3580710895edfabda19e4e70efa818b42a71460451ca024b747ebfd335ca43b",
+      "spirv_msl.cpp": "38c49916b4d62505c2669164f13eed8a302b6e594680b182374e8acc2cf498e0",
+      "spirv_msl.hpp": "8f6babc65539ad4751e2ba6273561ce61e6c5c325555ee0f07bbbe6e52e1be8f",
+      "spirv_parser.cpp": "dc12191c69ee9eccad2921540cfe20fd8ef4454b84fc22660abe405a448e0974",
+      "spirv_parser.hpp": "e5cc214ad1d87bd78183f2e72a902c0fb994dc18e7aa6e83e86cb2875708c2f2",
+      "spirv.hpp": "2ea0dd70e12e289c77a0347dfe88b5e1b6481a70e1804fab1557423394120f9f"
+    },
+    "licenseFilesSha256": {
+      "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "LICENSES/Apache-2.0.txt": "44b0a56e80b41a1b0a6bd1292515e806539fd97b30be54c2719e6c763190ab57",
+      "LICENSES/CC-BY-4.0.txt": "b89aeb7c2a164a0576786dd2a8b57f2fb628b23981f0a06bd77e2f99a9befa0f",
+      "LICENSES/LicenseRef-KhronosFreeUse.txt": "fbeaca472f4f70e276dd1106ca5097435967a22ad6c1d8200aef7ad9f70aaf3f",
+      "LICENSES/MIT.txt": "8f25018489d6fe0dec34a352314c38dc146247b7de65735790f4398a92afa84b"
+    },
+    "licenseBundleSha256": "e4cb8dc2b263213d0b7036cfae11004d29c4c2be2456460f71915696a93f7838"
+  },
+  "emscripten": "6.0.13",
+  "apiVersion": 2,
+  "spirvCrossOutputs": {
+    "msl": 20300,
+    "glsl": 450
+  }
+}

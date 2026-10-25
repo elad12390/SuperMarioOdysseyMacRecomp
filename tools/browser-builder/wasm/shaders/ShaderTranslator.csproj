@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <StartupObject>BrowserShaders.Startup</StartupObject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <WasmMainJSPath>shader-translator.mjs</WasmMainJSPath>
+    <WasmEnableHotReload>false</WasmEnableHotReload>
+    <WasmBuildNative>false</WasmBuildNative>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <NxNativeRoot>$(MSBuildThisFileDirectory)../../../../external/nxnative</NxNativeRoot>
+    <RyuSrc>$(NxNativeRoot)/dm/third_party/ryujinx</RyuSrc>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(NxNativeRoot)/dm/gfx/tools/dmsh_xlate/Program.cs" Link="OriginalProgram.cs" />
+    <ProjectReference Include="$(RyuSrc)/src/Ryujinx.Graphics.Shader/Ryujinx.Graphics.Shader.csproj" />
+    <ProjectReference Include="$(RyuSrc)/src/Ryujinx.Common/Ryujinx.Common.csproj" />
+    <EmbeddedResource Include="$(NxNativeRoot)/dm/gfx/tools/dmsh_xlate/Program.cs" LogicalName="src0" />
+    <EmbeddedResource Include="$(NxNativeRoot)/dm/gfx/tools/dmsh_xlate/dmsh_xlate.csproj" LogicalName="src1" />
+    <WasmExtraFilesToDeploy Include="shader-translator.mjs" />
+  </ItemGroup>
+</Project>

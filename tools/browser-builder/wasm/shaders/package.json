@@ -1,0 +1,11 @@
+{
+  "name": "switchrecomp-browser-shaders",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun tests/browser.test.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "24.43.1"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "odyssey-browser-rewriter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:browser": "bun test/browser.mjs",
+    "prepare": "bun build/prepare.mjs"
+  }
+}

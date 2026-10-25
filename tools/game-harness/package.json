@@ -1,0 +1,25 @@
+{
+  "name": "odyssey-playwright-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun server.ts",
+    "smoke": "bun demo.ts --controls-only",
+    "performance": "bun performance.ts",
+    "demo": "bun demo.ts",
+    "gui": "bun gui.ts",
+    "check": "tsc --noEmit",
+    "replay": "bun replay.ts",
+    "fog": "bun fog.ts",
+    "recorded-demo": "bun replay.ts --demo-excerpt --legacy-motion",
+    "tower-replay": "bun tower-replay.ts",
+    "lunakit-replay": "bun lunakit-replay.ts"
+  },
+  "dependencies": {
+    "playwright-core": "^1.58.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}

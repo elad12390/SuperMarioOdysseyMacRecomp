@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>BrowserExtractor</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WasmMainJSPath>extractor.js</WasmMainJSPath>
+    <WasmEnableHotReload>false</WasmEnableHotReload>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- LibHac targets net7.0 and needs the System.Runtime forwarding facade.
+         Keep the verified dependency graph intact in the public WASM bundle. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="LibHac" Version="[0.19.0]" GeneratePathProperty="true" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="[2.6.2]" />
+    <PackageReference Include="Mono.Cecil" Version="[0.11.6]" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="all" />
+    <Content Include="extractor.js;browser-io.js;extractor-worker.js;extractor-client.js"
+             Link="wwwroot/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="THIRD-PARTY-NOTICES.md" Link="wwwroot/THIRD-PARTY-NOTICES.md"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Import Project="build/BrowserLibHac.targets" />
+</Project>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="NuGet.Packaging" HintPath="$(MSBuildToolsPath)/NuGet.Packaging.dll" />
+    <Reference Include="NuGet.Common" HintPath="$(MSBuildToolsPath)/NuGet.Common.dll" />
+    <Reference Include="NuGet.Frameworks" HintPath="$(MSBuildToolsPath)/NuGet.Frameworks.dll" />
+    <Reference Include="NuGet.Versioning" HintPath="$(MSBuildToolsPath)/NuGet.Versioning.dll" />
+    <Reference Include="System.Security.Cryptography.Pkcs" HintPath="$(MSBuildToolsPath)/System.Security.Cryptography.Pkcs.dll" />
+  </ItemGroup>
+</Project>

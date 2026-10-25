@@ -1,0 +1,7 @@
+{
+  "name": "switchrecomp-browser-extractor",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "bun tests/browser-proof.mjs" },
+  "devDependencies": { "puppeteer-core": "24.43.1" }
+}

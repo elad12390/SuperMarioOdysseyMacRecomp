@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../../../tmp/odyssey/browser-extractor/obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../../../../tmp/odyssey/browser-extractor/bin/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

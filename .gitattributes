@@ -1,0 +1,2 @@
+# Unified diffs carry blank context markers and Makefile tabs.
+scripts/patches/*.patch -whitespace

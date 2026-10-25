@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Build your own Super Mario Odyssey for Apple Silicon. Your game and keys stay in your browser.">
+  <title>SwitchRecomp · Build for your Mac</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true">S</span> SwitchRecomp</a><a class="source" href="https://github.com/bgyss/SwitchRecomp">View source <span aria-hidden="true">↗</span></a></header>
+  <main>
+    <section class="intro"><div class="eyebrow">BUILT FOR APPLE SILICON</div><h1>Your game.<br>Your Mac.</h1><p class="lede">Turn your own Super Mario Odyssey dump into a native Mac app. Everything happens right here, on your device.</p></section>
+    <section class="builder" aria-labelledby="builder-heading">
+      <div class="builder-header"><div><div class="eyebrow">SUPER MARIO ODYSSEY</div><h2 id="builder-heading">Build your Mac version</h2></div><span class="platform">ARM64</span></div>
+      <p class="compatibility">Base game 1.0.0 · Apple Silicon · macOS 26 or later</p>
+      <label class="dropzone" id="dropzone" for="files"><span class="file-icon" aria-hidden="true">＋</span><strong>Drop your game and keys</strong><span>or choose files</span><span class="file-types">.nsp · prod.keys · optional title.keys</span><input id="files" type="file" multiple accept=".nsp,.keys"></label>
+      <ul id="selected-files" class="selected-files" aria-label="Selected files"></ul>
+      <div class="local-note"><span class="local-dot" aria-hidden="true"></span><span>Your files and keys stay on this device. No upload. No account.</span></div>
+      <button id="build" class="primary" disabled>Choose your game and prod.keys</button>
+      <button id="cancel" class="secondary" hidden>Cancel build</button>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <ol id="stages" class="stages" hidden><li data-stage="validate">Check game and keys</li><li data-stage="extract">Extract game files</li><li data-stage="rewrite">Convert ARM64 code</li><li data-stage="shaders">Translate graphics</li><li data-stage="package">Create Mac app</li><li data-stage="dmg">Create disk image</li></ol>
+      <progress id="progress" max="1" hidden></progress>
+      <a id="download" class="primary download" hidden>Download your DMG <span aria-hidden="true">↓</span></a>
+    </section>
+    <section class="details" aria-label="Before you build"><div><span class="detail-number">01</span><h3>Bring your own copy</h3><p>Use the base 1.0.0 NSP dumped from your game and your console’s prod.keys. Updates and other games are not supported yet.</p></div><div><span class="detail-number">02</span><h3>Let your browser build</h3><p>Keep this tab open while your browser converts the game. Keep at least 20 GB of disk space free for the extracted files and finished app.</p></div><div><span class="detail-number">03</span><h3>Install and play</h3><p>Open the disk image and copy the app to Applications. Saves and graphics settings live in Application Support. If macOS blocks the locally generated app, use Open Anyway in Privacy &amp; Security.</p></div></section>
+  </main>
+  <footer><span>Independent preservation research. Not affiliated with Nintendo.</span><span>Open-source tools. User-supplied game files.</span></footer>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

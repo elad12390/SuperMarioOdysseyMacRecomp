@@ -1,0 +1,82 @@
+{
+  "MIT": {
+    "url": "https://licenses.nuget.org/MIT",
+    "transport": "Web Research Assistant; whitespace normalized by retrieval",
+    "sha256": "55954d6b06696f5db9638d73b5d6e31b609780a2001cbe29a7647e7d79d24d92"
+  },
+  "Cecil": {
+    "url": "https://raw.githubusercontent.com/jbevain/cecil/0.11.6/LICENSE.txt",
+    "transport": "Web Research Assistant; whitespace normalized by retrieval",
+    "sha256": "dd5a84888155062f8d5a34115f2b76591a1fe7b9dee406927efb2a94070de00d"
+  },
+  "Humanizer": {
+    "url": "https://raw.githubusercontent.com/Humanizr/Humanizer/90f0cb1d7427635f38b46350bb1dc5fca2164f2d/license.txt",
+    "transport": "Web Research Assistant; whitespace normalized by retrieval",
+    "sha256": "2e4a605c5e5fdf50942252a62d8e3a16607d3fac935d542d5f7db46984c5ebcc"
+  },
+  "RecyclableMemoryStream": {
+    "url": "https://raw.githubusercontent.com/microsoft/Microsoft.IO.RecyclableMemoryStream/e29a28387da9018fa9605a1dcb3f7a0435aa9974/LICENSE",
+    "transport": "Web Research Assistant; whitespace normalized by retrieval",
+    "sha256": "dddd27ff24442ddb9d8513bb3f0c16a12cb3c7f505136642ae2d6122e880a5db"
+  },
+  "MsgPack": {
+    "url": "https://raw.githubusercontent.com/msgpack/msgpack-cli/1.0.1/LICENSE.txt",
+    "transport": "Web Research Assistant; whitespace normalized by retrieval",
+    "sha256": "7b677c81bec0de20324a51c692950c134f119ed8a0b6c16ce88f624a9abeccb9"
+  },
+  "Liblzma": {
+    "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.2.2/COPYING",
+    "transport": "Web Research Assistant; whitespace normalized by retrieval",
+    "sha256": "0c7cc51d0a683d9724d122c97bdcd35eab367442db76230f118eb0db3507c6e8"
+  },
+  "Cross-Apache-2.0": {
+    "url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/7affe74d77f93a622bb5002789d5332d32e512ee/LICENSES/Apache-2.0.txt",
+    "transport": "pinned dependency source checkout",
+    "sha256": "44b0a56e80b41a1b0a6bd1292515e806539fd97b30be54c2719e6c763190ab57"
+  },
+  "Cross-CC-BY-4.0": {
+    "url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/7affe74d77f93a622bb5002789d5332d32e512ee/LICENSES/CC-BY-4.0.txt",
+    "transport": "pinned dependency source checkout",
+    "sha256": "b89aeb7c2a164a0576786dd2a8b57f2fb628b23981f0a06bd77e2f99a9befa0f"
+  },
+  "Cross-LicenseRef-KhronosFreeUse": {
+    "url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/7affe74d77f93a622bb5002789d5332d32e512ee/LICENSES/LicenseRef-KhronosFreeUse.txt",
+    "transport": "pinned dependency source checkout",
+    "sha256": "fbeaca472f4f70e276dd1106ca5097435967a22ad6c1d8200aef7ad9f70aaf3f"
+  },
+  "Cross-MIT": {
+    "url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/7affe74d77f93a622bb5002789d5332d32e512ee/LICENSES/MIT.txt",
+    "transport": "pinned dependency source checkout",
+    "sha256": "8f25018489d6fe0dec34a352314c38dc146247b7de65735790f4398a92afa84b"
+  },
+  "Cross-Header-Copyright": {
+    "url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/7affe74d77f93a622bb5002789d5332d32e512ee/spirv.hpp",
+    "transport": "pinned source copyright header",
+    "sha256": "01f0482c972a3a85cafd856413a51ac7c71c82dbcd7bdba66c2a149a934fc187"
+  },
+  "Emscripten-libcxx": {
+    "url": "https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libcxx/LICENSE.TXT",
+    "transport": "installed Emscripten 6.0.13 source license",
+    "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b"
+  },
+  "Emscripten-libcxxabi": {
+    "url": "https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libcxxabi/LICENSE.TXT",
+    "transport": "installed Emscripten 6.0.13 source license",
+    "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c"
+  },
+  "Emscripten-musl": {
+    "url": "https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/libc/musl/COPYRIGHT",
+    "transport": "installed Emscripten 6.0.13 source license",
+    "sha256": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b"
+  },
+  "Emscripten-compiler-rt": {
+    "url": "https://github.com/emscripten-core/emscripten/blob/6.0.13/system/lib/compiler-rt/LICENSE.TXT",
+    "transport": "installed Emscripten 6.0.13 source license",
+    "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+  },
+  "Emscripten": {
+    "url": "https://github.com/emscripten-core/emscripten/blob/6.0.13/LICENSE",
+    "transport": "installed Emscripten 6.0.13 source license",
+    "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86"
+  }
+}
