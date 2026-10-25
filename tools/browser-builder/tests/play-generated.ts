@@ -64,7 +64,10 @@ try {
     evidence.started = await game.start({ headless: true, renderFPS: 0, profile: true, nativeHost: wrapper });
   });
   await test.step(actions[1]!, async () => {
-    await enterOpeningGameplay(page);
+    const states: unknown[] = []; evidence.openingStates = states;
+    await enterOpeningGameplay(page, { timeout: 180000, onState(state) {
+      if (states.length >= 256) states.splice(1, 1); states.push({ atMs: performance.now(), frame: state.frame, generation: state.generation, reads: state.reads, sampling: state.sampling, buttons: state.buttons, consumed: state.consumed, timing: state.timing, ui: state.ui });
+    } });
     const state = await page.state();
     assert.equal(state.route?.stage, 'CapWorldHomeStage');
     evidence.opening = state;
@@ -94,7 +97,7 @@ try {
     }, 10000);
     await page.until(async () => {
       const state = await page.state();
-      return Math.abs(state.route?.player?.velocity[1] ?? Infinity) < 1 && ticks(state) > ticks(before) + 15;
+      return Math.abs(position(state)[1]! - ground) < 3 && /PlayerActorHakoniwaNrvWaitE/.test(state.timing?.playerNerve ?? "") && ticks(state) > ticks(before) + 15;
     }, 15000);
     evidence.jump = { before, after: await page.state(), peak, rise: peak - ground };
   });
@@ -126,7 +129,11 @@ try {
   });
 } catch (error) { failure = error; }
 finally {
+  evidence.inputReceipts = page.keyboard.receipts;
   await writeFile(join(test.artifacts, 'generated-app-evidence.json'), JSON.stringify(evidence, null, 2) + '\n');
   try { await test.finish(failure); }
-  finally { await copyFile(join(process.env.GAME_HARNESS_RUNTIME!, 'frame-times.tsv'), join(test.artifacts, 'native-frame-times.tsv')).catch(() => {}); }
+  finally {
+    for (const [source, target] of [['frame-times.tsv', 'native-frame-times.tsv'], ['game.log', 'game.log']])
+      await copyFile(join(process.env.GAME_HARNESS_RUNTIME!, source!), join(test.artifacts, target!)).catch(() => {});
+  }
 }

@@ -1,13 +1,30 @@
 import type { NativeGamePage } from "./native-page.ts";
 
 /** Enter gameplay through native input/state, including a fresh save's camera tutorial. */
-export async function enterOpeningGameplay(page: NativeGamePage) {
-  const deadline = performance.now() + 60000;
+export async function enterOpeningGameplay(page: NativeGamePage, options: { timeout?: number; onState?: (state: Awaited<ReturnType<NativeGamePage["state"]>>) => void } = {}) {
+  const deadline = performance.now() + (options.timeout ?? 120000);
   while (performance.now() < deadline) {
-    const state = await page.state();
+    let state = await page.state();
+    options.onState?.(state);
     if (state.timing?.position) break;
-    if (!state.timing?.scene || /DemoSceneNrvPlay|SkipDemo/.test(state.timing.scene)) await page.keyboard.press("Enter");
-    await page.keyboard.press("j");
+    const sampling = state.sampling;
+    // First-launch shader compilation and scene loading can suspend input.
+    // Wait for a real new HID sample before sending the next menu action.
+    await page.until(async () => {
+      state = await page.state();
+      return Boolean(state.timing?.position) || state.sampling > sampling;
+    }, Math.max(1, deadline - performance.now()));
+    options.onState?.(state);
+    if (state.timing?.position) break;
+    const press = (key: string) => page.keyboard.press(key, { timeout: Math.max(1, deadline - performance.now()) });
+    if (!state.timing?.scene || /DemoSceneNrvPlay|SkipDemo/.test(state.timing.scene)) {
+      await press("Enter");
+      const previous = state.sampling;
+      await page.until(async () => { state = await page.state(); return Boolean(state.timing?.position) || state.sampling > previous; }, Math.max(1, deadline - performance.now()));
+      options.onState?.(state);
+      if (state.timing?.position) break;
+    }
+    await press("j");
     await page.transport.wait(state.generation);
   }
   await page.until(async () => Boolean((await page.state()).timing?.position), 10000);

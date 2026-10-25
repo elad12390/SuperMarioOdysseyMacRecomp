@@ -63,18 +63,18 @@ export class NativeKeyboard {
     this.controller.held.add(key); await this.controller.send();
   }
   async up(key: string) { this.controller.held.delete(normalize(key)); await this.controller.send(); }
-  async press(key: string, options: { delay?: number } = {}) {
+  async press(key: string, options: { delay?: number; timeout?: number } = {}) {
     const start = performance.now();
     await this.down(key);
     const dispatchMs = performance.now() - start;
     let consumedMs = 0;
     try {
-      await this.controller.waitConsumed(this.controller.input());
+      await this.controller.waitConsumed(this.controller.input(), options.timeout);
       consumedMs = performance.now() - start;
       if (options.delay) await Bun.sleep(options.delay);
     } finally { await this.up(key); }
     // Sequential taps need a real released sample, not a guessed sleep.
-    await this.controller.waitConsumed(this.controller.input());
+    await this.controller.waitConsumed(this.controller.input(), options.timeout);
     this.lastReceipt = { dispatchMs, consumedMs, releasedMs: performance.now() - start };
     if (this.receipts.length < 1024) this.receipts.push({ key, ...this.lastReceipt });
   }
