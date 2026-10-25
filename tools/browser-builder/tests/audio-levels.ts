@@ -6,11 +6,15 @@ export const MIN_AUDIO_MEAN_DB = -75;
 const run = promisify(execFile);
 
 /** Measure the first audio stream, rejecting silence and failed/incomplete analysis. */
-export async function assertAudibleAudio(path: string) {
+export async function assertAudibleAudio(path: string, options: { lastSeconds?: number } = {}) {
+  const tail = options.lastSeconds;
+  if (tail !== undefined && (!Number.isFinite(tail) || tail <= 0)) throw new Error('Audio interval must be a positive number of seconds');
   let stderr: string;
   try {
     ({ stderr } = await run('/opt/homebrew/bin/ffmpeg', [
-      '-hide_banner', '-nostdin', '-nostats', '-i', path, '-map', '0:a:0',
+      '-hide_banner', '-nostdin', '-nostats',
+      ...(tail === undefined ? [] : ['-sseof', String(-tail)]),
+      '-i', path, '-map', '0:a:0',
       '-vn', '-sn', '-dn', '-af', 'volumedetect', '-f', 'null', '-',
     ], { encoding: 'utf8', shell: false, timeout: 120000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 }));
   } catch (error) {
@@ -25,5 +29,5 @@ export async function assertAudibleAudio(path: string) {
   if (maxDb <= MIN_AUDIO_PEAK_DB || meanDb <= MIN_AUDIO_MEAN_DB) {
     throw new Error(`Audio is not audible for ${path}: meanDb=${meanDb}, maxDb=${maxDb} (exit=0; require meanDb>${MIN_AUDIO_MEAN_DB}, maxDb>${MIN_AUDIO_PEAK_DB})`);
   }
-  return { meanDb, maxDb, exitCode: 0, stderr };
+  return { meanDb, maxDb, lastSeconds: tail ?? null, exitCode: 0, stderr };
 }

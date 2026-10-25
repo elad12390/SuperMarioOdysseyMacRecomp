@@ -122,7 +122,7 @@ try {
   });
   await test.step(actions[6]!, async () => {
     await game.stop();
-    evidence.audio = await assertAudibleAudio(join(test.artifacts, 'native-audio-001.wav'));
+    evidence.audio = await assertAudibleAudio(join(test.artifacts, 'native-audio-001.wav'), { lastSeconds: 2 });
   });
 } catch (error) { failure = error; }
 finally {

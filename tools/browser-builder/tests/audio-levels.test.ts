@@ -43,11 +43,14 @@ test('accepts audible PCM16 stereo 48 kHz sine measured by real ffmpeg', async (
   expect(levels.maxDb).toBeGreaterThan(-30);
   expect(levels.maxDb).toBeLessThan(-5);
   expect(levels.stderr).toContain('volumedetect');
+  const tail = await assertAudibleAudio(join(fixtures!, 'sine.wav'), { lastSeconds: 0.1 });
+  expect(tail.meanDb).toBeCloseTo(levels.meanDb, 0);
+  expect(tail.lastSeconds).toBe(0.1);
   console.log(JSON.stringify({ fixture: 'sine', ...levels }));
 }, 10000);
 
 test('rejects valid but silent PCM16 stereo 48 kHz measured by real ffmpeg', async () => {
-  const failure = await assertAudibleAudio(join(fixtures!, 'silence.wav')).catch(error => error);
+  const failure = await assertAudibleAudio(join(fixtures!, 'silence.wav'), { lastSeconds: 0.1 }).catch(error => error);
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('Audio is not audible');
   expect((failure as Error).message).toContain('meanDb=');
