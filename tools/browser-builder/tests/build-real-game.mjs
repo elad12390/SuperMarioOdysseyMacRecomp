@@ -34,7 +34,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
   if (!await file.exists()) return new Response('Not found', { status: 404 });
   return new Response(request.method === 'HEAD' ? null : file, { headers: { 'Content-Type': file.type, 'Cache-Control': 'no-store' } });
 }});
-const started = Date.now(); let browser, page, network, downloaded = false, outcome;
+const started = Date.now(); let browser, page, network, outcome;
 try {
   browser = await puppeteer.launch({
     executablePath: resolve(process.env.HOME, '.cache/going-up-browsers/chrome-headless-shell/ext/chrome-headless-shell-mac-arm64/chrome-headless-shell'),
@@ -97,7 +97,6 @@ try {
   const hash = createHash('sha256'); for await (const chunk of createReadStream(dmg)) hash.update(chunk);
   if (requests.some(request => !['GET', 'HEAD'].includes(request.method) || request.queryLength || request.contentLength && request.contentLength !== '0')) throw new Error('A private-upload or unexpected request was observed.');
   if (network.unexpected().length || network.errors.length) throw new Error('Unexpected browser/worker network traffic or incomplete observation; inspect metadata evidence.');
-  downloaded = true;
   outcome = { passed: true, elapsedMs: Date.now() - started, dmg, bytes: info.size, sha256: hash.digest('hex'), result };
   console.log(`BROWSER_GAME_DMG=${dmg}`);
 } catch (error) {
@@ -107,8 +106,8 @@ try {
 } finally {
   await browser?.close(); server.stop(true);
   await writeFile(resolve(artifacts, 'result.json'), JSON.stringify({ ...outcome, requests, browserNetwork: network?.requests, browserNetworkErrors: network?.errors, progress, failures, consoleErrors, storage: { before: storageBefore, after: storageAfter, testQuotaOverrideGiB: quotaGiB ? +quotaGiB : null, cdpQuota }, boundary: 'Real browser file selection through downloaded DMG. Mount, signature and native gameplay are separate required checks.' }, null, 2) + '\n');
-  // The downloaded image and compact evidence remain. A closed browser profile
-  // can hold another full image in OPFS, so reclaim exactly this owned profile.
-  if (downloaded) await rm(profile, { recursive: true, force: true });
+  // Keep images and compact failure evidence, not another multi-gigabyte OPFS
+  // copy. Browser.close() above releases this exact owned profile first.
+  await rm(profile, { recursive: true, force: true });
   console.log(`BROWSER_BUILD_EVIDENCE=${artifacts}`);
 }
