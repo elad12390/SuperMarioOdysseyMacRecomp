@@ -78,6 +78,21 @@ exclusive job directory and a unique output name; concurrent writers must never
 share that destination. An abruptly terminated worker requires the caller to
 remove its abandoned job directory after its handles are released.
 
+`onFileWritten(entry)` is awaited exactly once per regular file, including empty
+files, after its reader closes and all payload and allocation padding writes
+resolve. It receives the original input entry; directories do not trigger it.
+The callback may delete a private job input that has no remaining consumers.
+Callers sharing physical sources across entries must track those consumers before
+deleting; the writer does not manage input ownership. Cancellation is checked
+before and after the callback. Callback failure stops writing and the OPFS
+wrapper removes incomplete output. Released inputs stay released on failure, so
+retry from retained originals. The callback does not change image bytes.
+
+OPFS writes use explicit safe-integer byte offsets across chunks and retry
+positive partial writes. Zero progress and invalid byte counts fail with the
+output byte position and requested remainder; storage estimates are not used to
+classify these failures.
+
 `chunkSize` defaults to 1 MiB (allowed: 4 KiB through 8 MiB). Payload memory is
 bounded by chunks; metadata scales with file count plus one bitmap bit per 4 KiB
 volume block. The current cap is 100,000 catalog objects and 2^32-1 allocation

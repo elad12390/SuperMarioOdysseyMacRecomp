@@ -1,4 +1,4 @@
-import { entryFromBlob, inspectDmg, writeDmgToOpfs, type DmgEntry } from "../index";
+import { entryFromBlob, inspectDmg, planDmg, writeDmgToOpfs, type DmgEntry } from "../index";
 
 declare const self: DedicatedWorkerGlobalScope;
 const text = new TextEncoder();
@@ -65,6 +65,52 @@ self.onmessage = async event => {
     if (!timerClosed || left <= 0) throw Error("Synchronous reader did not cancel early and close");
     try { await job.getFileHandle("timer-cancelled.dmg"); throw Error("Timer cancellation output survived"); }
     catch (e) { if (!(e instanceof DOMException && e.name === "NotFoundError")) throw e; }
+    // Real OPFS sources may be unlinked only after the writer releases their handles.
+    const sourceName = "private-source.bin", sourceBytes = text.encode("consumed-source\n".repeat(1000));
+    const sourceFile = await job.getFileHandle(sourceName, { create: true });
+    const sourceWriter = await sourceFile.createSyncAccessHandle();
+    try {
+      if (sourceWriter.write(sourceBytes, { at: 0 }) !== sourceBytes.length) throw Error("Fixture source write incomplete");
+      sourceWriter.flush();
+    } finally { sourceWriter.close(); }
+    let sourceClosed = false, released = 0;
+    const consumed: DmgEntry = { path: "data/private-source.bin", size: sourceBytes.length, mode: 0o644, open: async () => {
+      const input = await sourceFile.createSyncAccessHandle(); let offset = 0;
+      return { read: b => { const n = input.read(b, { at: offset }); offset += n; return n; }, close: () => { input.close(); sourceClosed = true; } };
+    } };
+    const consumedResult = await writeDmgToOpfs([consumed], job, "consumed.dmg", {
+      timestamp: 1700000000, chunkSize: 4096,
+      onFileWritten: async entry => {
+        if (entry !== consumed || !sourceClosed || ++released !== 1) throw Error("Invalid source release order or identity");
+        await new Promise<void>(done => setTimeout(done, 0));
+        await job.removeEntry(sourceName);
+      },
+    });
+    try { await job.getFileHandle(sourceName); throw Error("Consumed source survived"); }
+    catch (e) { if (!(e instanceof DOMException && e.name === "NotFoundError")) throw e; }
+    const consumedBytes = new Uint8Array(await (await consumedResult.file.getFile()).arrayBuffer());
+    const consumedInspection = await inspectDmg({ size: consumedBytes.length, read: async (o, n) => consumedBytes.subarray(o, o + n) });
+    const extent = planDmg([consumed], { timestamp: 1700000000 }).items.find(item => !item.directory)!;
+    if (released !== 1 || consumedInspection.dataChecksum !== consumedResult.dataChecksum ||
+      !sourceBytes.every((byte, i) => consumedBytes[extent.start * 4096 + i] === byte)) throw Error("Consumed source data or CRC changed");
+    await job.removeEntry("consumed.dmg");
+    for (const kind of ["failure", "cancellation"]) {
+      const controller = new AbortController(), outputName = `callback-${kind}.dmg`;
+      const reason = new Error(`callback-${kind}`); let callbacks = 0;
+      try {
+        await writeDmgToOpfs([blobEntry("data", "payload")], job, outputName, {
+          signal: controller.signal, onFileWritten: async () => {
+            callbacks++; await new Promise<void>(done => setTimeout(done, 0));
+            if (kind === "failure") throw reason;
+            controller.abort(reason);
+          },
+        });
+        throw Error("Callback failure unexpectedly succeeded");
+      } catch (e) { if (e !== reason) throw e; errors.push(String(e)); }
+      if (callbacks !== 1) throw Error("Callback was not invoked exactly once");
+      try { await job.getFileHandle(outputName); throw Error("Callback failure output survived"); }
+      catch (e) { if (!(e instanceof DOMException && e.name === "NotFoundError")) throw e; }
+    }
     const started = performance.now();
     let lastReport = 0;
     const result = await writeDmgToOpfs(entries, job, name, {
@@ -88,6 +134,7 @@ self.onmessage = async event => {
     } finally { verifyHandle.close(); }
     const file = await result.file.getFile();
     const { file: _handle, ...stats } = result;
-    self.postMessage({ done: true, file, stats: { ...stats, elapsedMs, sourceReadMax, sourceReads, opened, closed, inspection, errors, opfsFailuresCleaned: true } });
+    self.postMessage({ done: true, file, stats: { ...stats, elapsedMs, sourceReadMax, sourceReads, opened, closed, inspection, errors,
+      opfsFailuresCleaned: true, consumedSourceReleased: released === 1, consumedSourceVerified: true } });
   } catch (error) { self.postMessage({ error: String(error), stack: error instanceof Error ? error.stack : "" }); }
 };

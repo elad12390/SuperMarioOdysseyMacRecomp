@@ -53,6 +53,9 @@ export async function writeDmg(entries: readonly DmgEntry[], sink: DmgSink, opti
       if (await reader.read(buffer.subarray(0, 1)) !== 0) throw Error(`Source longer than declared size: ${item.path}`);
     } finally { await reader.close?.(); }
     await padding(round(item.size, BLOCK) - item.size);
+    aborted();
+    await options.onFileWritten?.(item.source!);
+    aborted();
   }
   await padding(plan.volumeBytes - BLOCK - written);
   const last = new Uint8Array(BLOCK); last.set(header, BLOCK - 1024); await emit(last);

@@ -55,6 +55,42 @@ async function closePackedStores(root:FileSystemDirectoryHandle){
   const cache=packedStores.get(root);packedStores.delete(root);
   if(cache)await Promise.allSettled([...cache.values()].map(async pending=>(await pending).close()));
 }
+type PhysicalSource = { root: FileSystemDirectoryHandle; path: string; remaining: number };
+function sourceReclaimer() {
+  const entries = new Map<string, PhysicalSource>();
+  const physical = new WeakMap<FileSystemDirectoryHandle, Map<string, PhysicalSource>>();
+  return {
+    track(entry: DmgEntry, root: FileSystemDirectoryHandle, file: SourceFile) {
+      if (entries.has(entry.path)) throw new Error('Duplicate generated app resource.');
+      const path = file.storagePath ?? file.path; parts(path);
+      let stores = physical.get(root);
+      if (!stores) { stores = new Map(); physical.set(root, stores); }
+      let store = stores.get(path);
+      if (!store) { store = { root, path, remaining: 0 }; stores.set(path, store); }
+      store.remaining++; entries.set(entry.path, store);
+      return entry;
+    },
+    written(entry: DmgEntry): Promise<void> | undefined {
+      const store = entries.get(entry.path);
+      if (!store) return;
+      entries.delete(entry.path);
+      if (--store.remaining) return;
+      physical.get(store.root)!.delete(store.path);
+      return (async () => {
+        // Packed readers are shared until the final logical extent is copied.
+        const readers = packedStores.get(store.root), pending = readers?.get(store.path);
+        if (pending) { readers!.delete(store.path); (await pending).close(); }
+        const names = parts(store.path); let directory = store.root, prefix = '';
+        for (const name of names.slice(0, -1)) {
+          prefix += name + '/';
+          directory = await (directories.get(store.root)?.get(prefix) ?? directory.getDirectoryHandle(name));
+        }
+        await directory.removeEntry(names.at(-1)!);
+      })();
+    },
+  };
+}
+
 function staticUrl(path: string, base: URL): URL {
   const url = new URL(path, base);
   if (url.origin !== self.location.origin || !['http:', 'https:'].includes(url.protocol)) throw new Error('Build tools must be served as static assets from this website.');
@@ -134,6 +170,7 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
     const template = await staticJson<Template>(runtimeUrl);
     if (template.format !== 1 || !graphics.chain || template.shaderChain !== graphics.chain) throw new Error('The runtime and browser shader tools have different versions. This website needs a matching release.');
     const entries: DmgEntry[] = [];
+    const reclaim = sourceReclaimer();
     for (const item of template.files) {
       signal.throwIfAborted(); parts(item.path);
       if (!item.path.startsWith('Super Mario Odyssey.app/Contents/') || item.size > 64 * 1024 ** 2) throw new Error('The public app template is invalid.');
@@ -145,10 +182,10 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
       entries.push(entryFromBlob(item.path, blob, item.mode));
     }
     for (const file of extraction.files as SourceFile[]) {
-      if (file.path.startsWith('RomFS/')) entries.push(sourceEntry(extracted, file, app + 'extract/v0/'));
+      if (file.path.startsWith('RomFS/')) entries.push(reclaim.track(sourceEntry(extracted, file, app + 'extract/v0/'), extracted, file));
     }
-    for (const file of rewritten.files as { name: string; size: number }[]) entries.push(sourceEntry(patched, { path: file.name, size: file.size }, app + 'patched_v0/'));
-    for (const file of graphics.files as SourceFile[]) entries.push(sourceEntry(shaderOutput, file, app));
+    for (const file of rewritten.files as { name: string; size: number }[]) entries.push(reclaim.track(sourceEntry(patched, { path: file.name, size: file.size }, app + 'patched_v0/'), patched, { path: file.name, size: file.size }));
+    for (const file of graphics.files as SourceFile[]) entries.push(reclaim.track(sourceEntry(shaderOutput, file, app), shaderOutput, file));
     const icon = await gameIcon(extracted);
     if (icon) entries.push(entryFromBlob('Super Mario Odyssey.app/Contents/Resources/Game.icns', icon));
     if (!entries.some(entry => entry.path.endsWith('/main.patched.bin')) || !entries.some(entry => entry.path.endsWith('/shader_map.tsv'))) throw new Error('The converters did not produce a complete playable app.');
@@ -158,7 +195,7 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
     // extracted HOME-menu icon without adding a public bundled game asset.
     if (icon) sealedEntries.push(entryFromBlob('.VolumeIcon.icns', icon));
     signal.throwIfAborted(); active = 'dmg'; report({ stage: active, message: 'Creating your disk image locally…' });
-    const result = await writeDmgToOpfs(sealedEntries, job, 'Super Mario Odyssey.dmg', { signal, volumeName: 'Super Mario Odyssey', onProgress: p => report({ stage: active, message: `Creating disk image · ${(p.writtenBytes / 1024 ** 3).toFixed(2)} GB`, fraction: Math.min(p.writtenBytes / p.volumeBytes, 1) }) });
+    const result = await writeDmgToOpfs(sealedEntries, job, 'Super Mario Odyssey.dmg', { signal, volumeName: 'Super Mario Odyssey', onFileWritten: entry => reclaim.written(entry), onProgress: p => report({ stage: active, message: `Creating disk image · ${(p.writtenBytes / 1024 ** 3).toFixed(2)} GB`, fraction: Math.min(p.writtenBytes / p.volumeBytes, 1) }) });
     await closePackedStores(shaderOutput);
     // Keep only the finished image; reclaim the multi-gigabyte intermediates.
     for (const name of ['extracted', 'patched', 'graphics']) await job.removeEntry(name, { recursive: true });

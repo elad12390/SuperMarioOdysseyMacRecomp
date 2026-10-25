@@ -111,7 +111,8 @@ export function planDmg(entries: readonly DmgEntry[], options: DmgOptions = {}):
     const typeBits = entry.mode & 0o170000;
     if (!Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o170777 || (entry.mode & ~0o170777) || (typeBits && typeBits !== (entry.type === "directory" ? 0o040000 : 0o100000))) throw Error("Unsupported mode or file type");
     if (entry.type === "directory" ? entry.size !== 0 || !!entry.open : typeof entry.open !== "function") throw Error("Files need open(); directories must have zero size and no payload");
-    insert(hfsPath(entry.path), { ...entry });
+    // Item snapshots layout metadata; retain the caller's entry for completion callbacks.
+    insert(hfsPath(entry.path), entry);
   }
   const volumeIcon = map.get(".VolumeIcon.icns");
   if (volumeIcon && !volumeIcon.directory) {

@@ -205,6 +205,39 @@ Both commands are test tooling only. Run them as background jobs and keep their 
 
 The native test uses `createGameTest`, private save/settings paths, direct native controller IPC and the runtime/data from the generated app. It produces the standard compressed video with native audio and action timeline, including failure/Not run states. Before the ending card, its explicit audio step stops native capture and measures the final two seconds of the real gameplay WAV through ffmpeg, after movement and camera control. It rejects peak levels at or below -60 dB or mean levels at or below -75 dB; real generated tone/silence regressions exercise this gate. The finalized MP4 also needs audio-stream and level verification. The test runs headless, so this evidence does not establish final native-window presentation correctness.
 
+## Firefox disk-image storage
+
+Firefox best-effort storage has a site-group limit of 10 GiB on this machine.
+Keeping all extracted/translated inputs alongside a complete 7 GB image can
+exceed it and stop Create disk image with an OPFS short write. Packaging now
+awaits successful payload/padding writes and reader closure before deleting each
+generated source. Packed shader stores remain until their final logical extent
+is copied. App sealing precedes reclamation; selected NSPs, keys and Player saves
+are never removed. The writer also uses explicit output offsets, retries positive
+partial writes and reports a zero/invalid write with its byte position.
+
+The full real-input Firefox 158.0.1 regression uses a fresh owned headless profile
+with persistence disabled and the natural 10,737,418,240-byte quota. It reaches a
+ready image in 313,924 ms (5m14s), completing download/SHA-256 at 329,090 ms
+(5m29s). The downloaded image is 7,018,870,116 bytes. Sampled peak site usage is
+9,327,642,455 bytes (8.69 GiB), falling to about 7.02 GB with only output retained.
+No quota override or persistence permission was used; all six stages completed
+and no page errors occurred. macOS verifies the downloaded DMG checksum and
+accepts a read-only mount and the strict app signature. All 66,422 declared
+shader/profile files pass their actual size/SHA-256 checks, and the app/volume
+icons have identical bytes. No native game or desktop window was launched for
+this storage-only regression. This measures the complete Firefox storage path,
+with the unchanged source-built converter/runtime chain `8b86866155b2`.
+
+```sh
+bun tools/browser-builder/tests/firefox-build.mjs --nsp /path/to/base.nsp --keys /path/to/prod.keys
+```
+
+The test records its owned Firefox PID/profile/endpoint, stage progress, sampled
+storage and final image hash under `tmp/odyssey/opfs-firefox/`, closes that browser
+and removes its private profile. It never connects to an existing Firefox.
+Evidence: `tmp/odyssey/opfs-firefox/2026-10-25T21-05-43.570Z/result.json`.
+
 ## Converter corrections and storage lifecycle
 
 Full-corpus validation caught two issues before any generated-game GPU test: temporary cleanup deleted 10,645 framebuffer-fetch source variants, and the original browser Cross pin lacked the depth aliases used by the working native compiler. The corrected source backend preserves fetch output and uses official SPIRV-Cross tag `vulkan-sdk-1.4.363.0` (`f11ba9f0b21ba8fc15153d50a2a1ae31ab1cf8f7`). The bounded 11-record regression passes, including fetch/depth cases, all geometry topologies/readers and a 31.5 MB Metal source. Its matching runtime/tool chain is `198729df4d5a`; the earlier `57e1752d814c` candidate is failed evidence, not a release.

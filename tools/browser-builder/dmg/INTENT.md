@@ -22,6 +22,11 @@ Acceptance:
   short/long sources, cancellation and failed sink writes reject. OPFS failure
   removes incomplete job output; no download is reported as ready.
 - Corrupt payload and corrupt container metadata are rejected by validation.
+- Await `onFileWritten` once per file only after payload/padding and reader close,
+  so private job inputs can be removed without changing image bytes or CRCs.
+  Callback failure or cancellation stops output and removes incomplete OPFS files.
+- OPFS writes retain explicit safe-integer offsets and retry positive partial
+  writes; zero/invalid counts fail with the byte position and pending length.
 - A regular root `.VolumeIcon.icns` automatically sets the root folder's
   `kHasCustomIcon` and the icon file's `kIsInvisible` Finder flags. A real readonly
   mount exposes both flags and preserves the supplied ICNS bytes. Without this

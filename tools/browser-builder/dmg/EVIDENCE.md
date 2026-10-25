@@ -1,9 +1,34 @@
 # Verified browser disk-image stage
 
-Verified locally on Apple Silicon macOS on 2026-10-25. This is an independently
-usable packaging stage, not evidence that the whole Odyssey browser conversion
-pipeline is complete. No game inputs, Player installation or saves were used.
-No commit, push, native image creation, native game test or distribution occurred.
+Verified locally on Apple Silicon macOS on 2026-10-25. The fixture-based module
+checks below are independent packaging evidence. Their initial runs used no game
+inputs, Player installation or saves. The subsequent full Firefox integration
+uses private local game inputs; its scope and measurements are recorded in
+[the browser release documentation](../../../docs/browser-release.md#firefox-disk-image-storage).
+No native game or desktop window was launched for the storage regression.
+
+## Input release and explicit OPFS offsets
+
+The 2026-10-25 focused rerun passed all 23 existing tests and 6 new real-file
+regressions: **29 passed, 0 failed, 627 assertions**. Asynchronous writes/close
+finish before the callback unlinks each source, including empty files. Complete
+image bytes match the retained-input run; payloads and UDIF CRCs validate.
+Callback rejection/cancellation stops before opening the next source; failed
+reads, padding writes and pre-callback cancellation do not release input.
+
+Commands from the repository root, all exit 0:
+
+- `bun test ./tools/browser-builder/dmg/test`
+- `bun run --cwd tools/browser-builder/dmg typecheck`
+- `bun run --cwd tools/browser-builder typecheck`
+- `bun tools/browser-builder/dmg/test/browser.ts`
+
+The small real OPFS worker run in HeadlessChrome/154.0.8037.92 unlinked its closed
+source, verified image data/CRC and removed incomplete output after callback
+rejection and cancellation. No mocks or quota/persistence requests were used.
+This rerun did not force zero/invalid write responses or repeat the >4 GiB,
+Firefox, full-game or mounted-app acceptance. Per-command PID, log and exit
+status: `tmp/odyssey/opfs-firefox/1792962129310-{dmg-tests,dmg-typecheck,builder-typecheck,opfs-browser}/`.
 
 ## RED before GREEN
 

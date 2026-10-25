@@ -21,6 +21,8 @@ export interface DmgOptions {
   timestamp?: number;
   signal?: AbortSignal;
   onProgress?: (progress: { writtenBytes: number; volumeBytes: number; path?: string }) => void;
+  /** Awaited once per file after payload/padding writes and reader close; may release private input. */
+  onFileWritten?: (entry: DmgEntry) => void | Promise<void>;
 }
 export interface DmgResult {
   volumeBytes: number;

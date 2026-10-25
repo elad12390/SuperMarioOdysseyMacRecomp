@@ -26,11 +26,16 @@ export async function writeDmgToOpfs(entries: readonly DmgEntry[], directory: Fi
   try {
     handle = await file.createSyncAccessHandle(); handle.truncate(0);
     const active = handle;
+    let offset = 0;
     const result = await writeDmg(entries, { write: bytes => {
+      if (!Number.isSafeInteger(offset + bytes.length)) throw Error(`OPFS write exceeds a safe byte offset at byte ${offset}`);
       let at = 0;
       while (at < bytes.length) {
-        const n = active.write(bytes.subarray(at));
-        if (!Number.isInteger(n) || n <= 0) throw Error("OPFS short write"); at += n;
+        const pending = bytes.length - at;
+        const n = active.write(bytes.subarray(at), { at: offset });
+        if (n === 0) throw Error(`OPFS write made no progress at byte ${offset} (${pending} bytes pending); check available browser and disk storage before retrying the build`);
+        if (!Number.isInteger(n) || n < 0 || n > pending) throw Error(`Invalid OPFS write count ${n} at byte ${offset} (requested ${pending} bytes); retry the build in a fresh job`);
+        at += n; offset += n;
       }
     } }, options);
     active.flush(); active.close(); handle = undefined;

@@ -4,7 +4,7 @@
 - The user approved first-launch compilation of browser-generated Metal source by the installed app. Extraction, ARM64 rewriting, Maxwell translation and MSL generation remain in the browser.
 - Publish only reusable open-source runtime/tool assets, their exact source recipes and required notices. Real NSPs, keys, decrypted files, shader fixtures, screenshots containing game data and generated game DMGs stay under ignored `tmp/odyssey/`.
 - Use the pristine pinned nxnative source plus the tracked compatibility patches for release builds. The ignored development checkout includes unrelated experimental changes.
-- Tests use isolated headless Chrome from `~/.cache/going-up-browsers`, with a separate profile. Do not access the user's browser or existing Player instance.
+- Tests use an isolated headless Firefox profile for Firefox regressions; otherwise use isolated headless Chrome from `~/.cache/going-up-browsers`, with a separate profile. Do not access the user's browser or existing Player instance.
 - Command-line launcher validation, including rejected test-profile paths, must write stderr and exit without `NSAlert` or any desktop window. Negative tests must have bounded process timeouts and terminate only their captured child PID on failure.
 - Treat complete cold browser build time as acceptance, targeting a few minutes on the M4 Pro. Report measured time to the ready DMG separately from download/checksum verification. An hour-long prototype baseline is not an acceptable product target. Keep .NET converter builds AOT-compiled and measure the real NSP path before claiming a speedup.
 - Overlap independent work only after its input files are flushed and closed. Stop and join background conversion on failure/cancellation. Packed intermediates must retain logical file paths, sizes and SHA-256 values, and sealing must verify those digests before signing.
@@ -14,3 +14,5 @@
 - Browser conversion acceptance must set the browser protocol timeout longer than the scenario timeout; the default three-minute DevTools timeout can terminate a healthy multi-gigabyte build. Keep the command in a captured background job and monitor progress.
 - Treat `navigator.storage.estimate()` as advisory. Chromium may report usage plus a fixed 10 GiB for privacy; actual OPFS writes enforce quota. Do not hard-reject a valid larger build from that estimate alone.
 - Keep vendored release license texts byte-for-byte identical to their pinned hashes. Formatting hooks exclude only `release/licenses/*.txt`; source files retain the ordinary checks.
+
+- Firefox best-effort storage can be limited to 10 GiB. During DMG writing, release only the generated per-job sources after their successful payload/padding copy and reader close. Retain packed files until every logical extent has been consumed. Seal the app first, leave original selected files untouched, and verify the full Firefox pipeline under its natural nonpersistent quota without raising it.
