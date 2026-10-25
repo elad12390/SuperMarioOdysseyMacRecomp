@@ -1,5 +1,7 @@
 # Browser-only macOS release
 
+The source is published at [elad12390/SwitchRecomp](https://github.com/elad12390/SwitchRecomp).
+
 The release goal is a GitHub Pages website where the user selects their own
 Super Mario Odyssey base 1.0.0 NSP and console keys and downloads a standalone
 Apple Silicon macOS DMG. Private inputs and generated game files stay on the
@@ -66,6 +68,8 @@ bun run typecheck
 bun run build:release
 bun run dev
 ```
+
+The Pages workflow can be dispatched manually. A push to `main` also runs it when the workflow file itself changes; the path filter avoids starting a full release for unrelated commits and makes initial workflow registration explicit.
 
 The development `bun run build` command builds only the interface. Use `build:release` for the complete site and runtime.
 

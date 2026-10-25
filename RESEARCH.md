@@ -291,3 +291,7 @@ Needed research:
 - [Apple code-signature structures](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/cs_blobs.h): primary CodeDirectory/SuperBlob field definitions used to validate and update the ad-hoc resource hash after local game resources are added. Browser-generated artifacts are independently checked with macOS deep/strict signature verification.
 
 - [Chromium storage quota reporting](https://chromium.googlesource.com/chromium/src/+/main/storage/browser/quota/quota_manager_impl.cc) and [StaticStorageQuota feature](https://chromium.googlesource.com/chromium/src/+/main/storage/browser/quota/quota_features.cc): Storage API estimates intentionally report usage plus 10 GiB by default; the browser builder must not reject larger local builds using that privacy-limited estimate. Real OPFS writes enforce available quota.
+
+## GitHub workflow registration
+
+- [GitHub Community: workflows omitted after initial repository push](https://github.com/orgs/community/discussions/179439) - Firsthand report of manual workflow indexing during new-repository/default-branch initialization. This is context for deployment diagnosis; the release workflow also has a narrowly scoped push trigger on its own file.
