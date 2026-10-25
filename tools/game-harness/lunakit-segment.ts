@@ -10,7 +10,11 @@ import { ReplayObserver, type ReplayCheckpoint } from "./replay-observer.ts";
 
 type Tape = Awaited<ReturnType<typeof readLunaTape>>;
 type GameTest = Awaited<ReturnType<typeof createGameTest>>;
-type LunaState = NativeState & { lunaScene?: { type: string; nerve: string; step: number } };
+type LunaState = NativeState & {
+  lunaScene?: { type: string; nerve: string; step: number };
+  lunaSession?: { continuous: boolean };
+  savestates?: { paused: boolean };
+};
 const replay = (s: NativeState) => s.replay as LunaReplay | undefined;
 const nativeDeath = (s: NativeState) => /Nrv(?:Miss|Dead)/.test(`${s.timing?.scene ?? ""} ${s.timing?.playerNerve ?? ""} ${s.route?.actors.find(a => a.type === "PlayerActorHakoniwa" && a.alive)?.nerve ?? ""}`)
   ? "Native Mario entered Miss/Dead" : undefined;
@@ -110,8 +114,8 @@ export async function runLunaSegment(test: GameTest, tape: Tape, plans: ReplayCh
     await writeFile(original, tape.bytes);
     await observer.start();
     if (options.continuous) {
-      const state = await game.page.state();
-      const session = (state as NativeState & { lunaSession?: { continuous: boolean } }).lunaSession;
+      const state = await game.page.state() as LunaState;
+      const session = state.lunaSession;
       if (!session?.continuous || state.replay?.active || state.savestates?.paused)
         throw new Error("Continuous tape handoff requires an idle, live continuous Tests session");
       // NativeGamePage.replay intentionally stops isolated replays first. A
