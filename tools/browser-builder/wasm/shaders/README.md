@@ -11,6 +11,17 @@ native Metal compilation with preserveInvariance.
 Prerequisites: .NET SDK 10.0.402 and installed wasm-tools (runtime pack 10.0.13),
 Emscripten 6.0.13, Bun, and the existing nxnative checkout. These scripts never
 install the .NET workload. All build products go to tmp/odyssey/browser-shaders.
+Maxwell Release builds compile the .NET assemblies to native WASM with LLVM AOT
+and -O3, using the installed workload's Emscripten toolchain. AOT requires IL
+trimming, so ShaderTranslator, Ryujinx.Graphics.Shader, Ryujinx.Common and
+Spv.Generator are explicit trimmer roots. Their original source stays unchanged.
+IL is retained for reflection and any generic interpreter fallback.
+
+SHADER_OFFLINE=1 restores from the existing local NuGet cache only, with an
+empty local package source and auditing disabled; a missing dependency fails
+without contacting a package feed. Normal CI builds retain their existing NuGet
+restore behavior. The script never installs tools or workloads.
+Only one Maxwell build may own its captured build lock at a time.
 Run from the repository root:
 
 ```sh
@@ -18,6 +29,18 @@ bun install --cwd tools/browser-builder/wasm/shaders
 sh tools/browser-builder/wasm/shaders/build.sh
 sh tools/browser-builder/wasm/shaders/build-spirv-cross.sh
 ```
+
+Set SHADER_PUBLISH_DIR to a separate directory under
+tmp/odyssey/browser-shaders to build a candidate without changing the standard
+publish/ directory. Test that candidate with SHADER_MAXWELL_ROOT pointing at its
+wwwroot. SHADER_PROOF and SHADER_BROWSER_PROFILE select private evidence/profile
+paths for both browser.test.mjs and geometry.test.mjs. Do not replace the standard
+publication while the higher pipeline is copying it; frozen public releases are
+never build output targets.
+
+For a local build without network/package downloads, prefix the build command
+with SHADER_OFFLINE=1. The accepted AOT comparison was built with only local
+package sources and installed workloads.
 
 Deploy only these tool directories:
 
@@ -110,6 +133,24 @@ checked, including nonempty resource tables. The original source is not patched.
 The shader module proof does not establish whole-library coverage or a playable
 DMG. The main pipeline owns extraction, all higher MSL rules, packaging and runtime
 first-launch compilation.
+
+For a comparison of an existing interpreter publication and an AOT candidate,
+run the real-sample benchmark after both builds are idle:
+
+```sh
+bun tools/browser-builder/wasm/shaders/tests/benchmark.mjs \
+  /absolute/private/interpreter/wwwroot /absolute/private/aot/wwwroot \
+  /absolute/repository/tmp/odyssey/browser-shaders/comparison.json
+```
+
+It times only the real Maxwell translateBatch calls in an isolated module worker,
+after startup and with network disabled. It uses the existing V/P/C, all geometry
+topologies/readers, and depth-alias fixtures, with one job per call as in the
+higher pipeline. Every repeated result must match
+the native SPIR-V bytes and resource JSON; interpreter and AOT fingerprints must
+also match. The first batch and seven subsequent timings are reported separately,
+along with startup times. These sample timings do not establish whole-library
+speed or a playable release.
 
 ## Sources and licenses
 

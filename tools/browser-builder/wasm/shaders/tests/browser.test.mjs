@@ -8,6 +8,7 @@ import puppeteer from 'puppeteer-core';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const work = path.join(repo, 'tmp/odyssey/browser-shaders');
+const maxwellRoot = path.resolve(process.env.SHADER_MAXWELL_ROOT ?? path.join(work, 'publish/wwwroot'));
 const jobsPath = process.env.SHADER_JOBS ?? path.join(work, 'fixtures/jobs.json');
 const nativeDir = process.env.SHADER_NATIVE_OUTPUT ?? path.join(work, 'native-output');
 const jobs = JSON.parse(await readFile(jobsPath, 'utf8'));
@@ -27,7 +28,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     let base, relative;
-    if (url.pathname.startsWith('/maxwell/')) { base = path.join(work, 'publish/wwwroot'); relative = url.pathname.slice(9); }
+    if (url.pathname.startsWith('/maxwell/')) { base = maxwellRoot; relative = url.pathname.slice(9); }
     else if (withCross && url.pathname.startsWith('/cross/')) { base = path.join(work, 'cross'); relative = url.pathname.slice(7); }
     else throw new Error('Asset route is not allowed.');
     const resolved = path.resolve(base, relative);
@@ -46,7 +47,8 @@ try {
   browser = await puppeteer.launch({
     executablePath: process.env.HEADLESS_SHELL ?? path.join(process.env.HOME, '.cache/going-up-browsers/chrome-headless-shell/ext/chrome-headless-shell-mac-arm64/chrome-headless-shell'),
     headless: true,
-    userDataDir: path.join(work, 'isolated-browser-profile'),
+    userDataDir: process.env.SHADER_BROWSER_PROFILE ?? path.join(work, 'isolated-browser-profile'),
+    protocolTimeout: 600000,
     args: ['--no-sandbox', '--disable-gpu', '--disable-background-networking'],
   });
   const page = await browser.newPage();
@@ -132,7 +134,7 @@ try {
   }
   assert(requests.every(request => request.method === 'GET' && !request.hasBody && request.url.startsWith(origin + '/')), 'Unexpected network request.');
   proof.consoleMessages = consoleMessages;
-  await writeFile(path.join(work, withCross ? 'browser-proof-cross.json' : 'browser-proof.json'), JSON.stringify(proof, null, 2) + '\n');
+  await writeFile(process.env.SHADER_PROOF ?? path.join(work, withCross ? 'browser-proof-cross.json' : 'browser-proof.json'), JSON.stringify(proof, null, 2) + '\n');
   console.log(JSON.stringify(proof, null, 2));
 } catch (error) {
   console.error(consoleMessages.join('\n'));

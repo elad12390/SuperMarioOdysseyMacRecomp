@@ -8,6 +8,7 @@ import puppeteer from 'puppeteer-core';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const work = path.join(repo, 'tmp/odyssey/browser-shaders');
+const maxwellRoot = path.resolve(process.env.SHADER_MAXWELL_ROOT ?? path.join(work, 'publish/wwwroot'));
 const jobs = JSON.parse(await readFile(path.join(work, 'geometry-fixtures/jobs.json'), 'utf8'));
 const samples = JSON.parse(await readFile(path.join(work, 'geometry-fixtures/samples.json'), 'utf8'));
 const functions = JSON.parse(await readFile(path.join(work, 'geometry-fixtures/functions.json'), 'utf8'));
@@ -36,7 +37,7 @@ const server = createServer(async (request, response) => {
     requests.push({ method: request.method, path: pathname });
     assert.equal(request.method, 'GET');
     if (pathname === '/') { response.setHeader('Content-Type', 'text/html'); response.end('<!doctype html><title>Real geometry WASM proof</title>'); return; }
-    const mounts = { '/maxwell/': path.join(work, 'publish/wwwroot'), '/cross/': path.join(work, 'cross'), '/pyodide/': path.join(repo, 'tmp/odyssey/browser-rewriter/bundle/pyodide') };
+    const mounts = { '/maxwell/': maxwellRoot, '/cross/': path.join(work, 'cross'), '/pyodide/': path.join(repo, 'tmp/odyssey/browser-rewriter/bundle/pyodide') };
     const prefix = Object.keys(mounts).find(prefix => pathname.startsWith(prefix));
     assert(prefix);
     const filename = path.resolve(mounts[prefix], pathname.slice(prefix.length));
@@ -49,7 +50,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
 let browser;
 try {
-  browser = await puppeteer.launch({ executablePath: path.join(process.env.HOME, '.cache/going-up-browsers/chrome-headless-shell/ext/chrome-headless-shell-mac-arm64/chrome-headless-shell'), headless: true, userDataDir: path.join(work, 'geometry-browser-profile'), args: ['--no-sandbox', '--disable-gpu', '--disable-background-networking'] });
+  browser = await puppeteer.launch({ executablePath: path.join(process.env.HOME, '.cache/going-up-browsers/chrome-headless-shell/ext/chrome-headless-shell-mac-arm64/chrome-headless-shell'), headless: true, userDataDir: process.env.SHADER_BROWSER_PROFILE ?? path.join(work, 'geometry-browser-profile'), protocolTimeout: 600000, args: ['--no-sandbox', '--disable-gpu', '--disable-background-networking'] });
   const page = await browser.newPage();
   const consoleErrors = [];
   page.on('pageerror', error => consoleErrors.push(error.message));
@@ -128,7 +129,7 @@ try {
   assert.equal(consoleErrors.length, 0, consoleErrors.join('\n'));
   proof.offline = true; proof.conversionNetworkRequests = 0; proof.requests = requests;
   proof.sourceFunctionSha256 = createHash('sha256').update(JSON.stringify(functions)).digest('hex');
-  await writeFile(path.join(work, 'geometry-proof.json'), JSON.stringify(proof, null, 2) + '\n');
+  await writeFile(process.env.SHADER_PROOF ?? path.join(work, 'geometry-proof.json'), JSON.stringify(proof, null, 2) + '\n');
   console.log(JSON.stringify({ ...proof, requests: proof.requests.length }, null, 2));
 } finally {
   await browser?.close();

@@ -8,14 +8,25 @@
     <Nullable>disable</Nullable>
     <WasmMainJSPath>shader-translator.mjs</WasmMainJSPath>
     <WasmEnableHotReload>false</WasmEnableHotReload>
-    <WasmBuildNative>false</WasmBuildNative>
-    <!-- The original translator needs the complete SPIR-V generator assembly. -->
-    <PublishTrimmed>false</PublishTrimmed>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <WasmBuildNative>true</WasmBuildNative>
+    <PublishTrimmed>true</PublishTrimmed>
+    <WasmNativeDebugSymbols>false</WasmNativeDebugSymbols>
+    <EmccCompileOptimizationFlag>-O3</EmccCompileOptimizationFlag>
+    <WasmBitcodeCompileOptimizationFlag>-O3</WasmBitcodeCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-O3</EmccLinkOptimizationFlag>
+    <!-- Retain IL for reflection and any generic interpreter fallback. -->
+    <WasmStripILAfterAOT>false</WasmStripILAfterAOT>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <NxNativeRoot>$(MSBuildThisFileDirectory)../../../../external/nxnative</NxNativeRoot>
     <RyuSrc>$(NxNativeRoot)/dm/third_party/ryujinx</RyuSrc>
   </PropertyGroup>
   <ItemGroup>
+    <!-- AOT requires trimming; preserve the original translator dependency graph. -->
+    <TrimmerRootAssembly Include="ShaderTranslator" />
+    <TrimmerRootAssembly Include="Ryujinx.Graphics.Shader" />
+    <TrimmerRootAssembly Include="Ryujinx.Common" />
+    <TrimmerRootAssembly Include="Spv.Generator" />
     <Compile Include="$(NxNativeRoot)/dm/gfx/tools/dmsh_xlate/Program.cs" Link="OriginalProgram.cs" />
     <ProjectReference Include="$(RyuSrc)/src/Ryujinx.Graphics.Shader/Ryujinx.Graphics.Shader.csproj" />
     <ProjectReference Include="$(RyuSrc)/src/Ryujinx.Common/Ryujinx.Common.csproj" />

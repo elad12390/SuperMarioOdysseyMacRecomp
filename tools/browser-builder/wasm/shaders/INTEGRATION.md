@@ -18,6 +18,28 @@ const source = cross.translate(translated[0].spirv); // string, flags match nati
 Replace the example asset prefix with the caller's actual static mount paths.
 
 Built Maxwell assets: tmp/odyssey/browser-shaders/publish/wwwroot/ (copy entire directory).
+Maxwell now uses source-built .NET LLVM AOT with -O3. The synchronous public API
+and shader options are unchanged. The installed 10.0.402 SDK/10.0.13 wasm-tools
+compile the original source-linked translator; no downloaded runtime replacement
+or patched Ryujinx implementation is used. AOT requires trimming, with explicit
+roots for the translator, Ryujinx.Graphics.Shader, Ryujinx.Common and
+Spv.Generator. IL remains available for reflection/generic fallback.
+
+The accepted AOT publication has passed the existing V/P/C, depth-alias, and
+complete geometry browser proofs offline. The real-sample comparison covers 25
+jobs, one job per translateBatch call, with seven timed warm rounds. All SPIR-V,
+resource JSON and reader bytes match both native and interpreter references.
+Measured warm medians for V/P/C, geometry and depth were 75.1 -> 22.4 ms,
+201.0 -> 62.3 ms and 24.2 -> 6.8 ms respectively (3.2..3.6x). These are sample
+timings, not a whole-library AOT result. Worker startup was 90.0 -> 182.7 ms;
+total publication bytes were 14,487,399 -> 34,428,919.
+
+Private evidence: tmp/odyssey/browser-shaders/maxwell-aot-proof-1792954669/,
+including benchmark.json, vpc-proof.json, depth-proof.json and geometry-proof.json.
+The verified candidate was promoted to the standard publish directory only
+after checking no higher-pipeline copy was active. Keep that directory stable
+while consumers copy it. All higher toolchain/CHAIN identities and matching
+native runtime headers must be rebuilt by their owner because tool bytes changed.
 Built Cross assets: tmp/odyssey/browser-shaders/cross/translator.mjs, spirv-cross.mjs,
 spirv-cross.wasm and SPIRV-Cross.LICENSE (copy these four; exclude native-spirv-cross).
 The API itself handles .NET's worker sidecar flag before runtime import.
