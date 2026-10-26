@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test ./tests/intake.test.ts ./tests/provenance.test.ts ./tests/audio-levels.test.ts",
+    "test": "bun test ./tests/intake.test.ts ./tests/provenance.test.ts ./tests/audio-levels.test.ts ./installer/metadata.test.ts ./installer/background.test.ts",
     "build": "bun build.ts",
     "build:release": "bun build-release.mjs",
     "dev": "bun serve.ts",

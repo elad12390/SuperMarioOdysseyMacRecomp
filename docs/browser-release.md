@@ -111,6 +111,56 @@ still use macOS's standard disk-image icon: a browser download cannot set custom
 Finder file metadata on the host filesystem. Game artwork remains local in
 either case. No native conversion helper is introduced.
 
+## Finder installer window
+
+The generated DMG now includes a native drag-to-Applications layout. Finder
+places the locally extracted Odyssey app icon on the left and a real
+`/Applications` shortcut on the right, with a Retina backdrop and arrow.
+The background is generated in browser Canvas and sealed inside the app before
+packaging. No Nintendo artwork is added to the public site.
+
+Finder metadata uses the planned volume timestamp and file IDs, including the
+background AliasRecord and root-open folder setting. The window reserves space
+for user-enabled Finder bars; global Finder preferences remain unchanged. A
+user who shows hidden files can see the otherwise invisible `.VolumeIcon.icns`.
+The installer background itself adds no volume-root folder.
+
+Local verification includes independent DS_Store/plist/AliasRecord readers, real
+CoreFoundation resolution, exact Retina sizing, browser OPFS/download, readonly
+filesystem/CRC verification, strict signatures and relocation of the source-built
+runtime template. An explicitly approved actual Finder window was visually
+reviewed, including the preserved game icon and unclipped instructions.
+See [the installer module](../tools/browser-builder/installer/README.md) for
+format boundaries and reusable commands. Full private-input game acceptance is
+recorded separately from this runtime-only layout fixture.
+
+On 2026-10-26, the complete local Firefox 158.0.1 build reaches a ready
+7,024,518,500-byte styled DMG in 387,586 ms (6m28s), with a sampled peak of
+9,356,452,951 bytes (8.71 GiB) under its natural 10 GiB nonpersistent quota.
+This run uses test-only `--retain-opfs`: it exports the already browser-written
+file with a hard link and hashes it, avoiding a duplicate 7 GB download. The
+small source-built runtime fixture independently exercises the real download.
+No native packager is involved in either path.
+
+The full image passes independent checksum, read-only mount, strict signature,
+icon and real alias-resolution checks while an older same-name game volume is
+also mounted. All 66,422 declared shader/profile files pass size/SHA-256 checks.
+The installed APFS test copy is compared file-by-file with the actual DMG:
+all 71,099 files match, with strict signatures intact. An existing private
+APFS copy supplies shared storage only; 27,239 differing files are replaced
+from the new image, and the seed is preserved.
+
+The fresh private-save native run passes all seven gameplay/audio checks:
+1,102.7 units of walking, a 189.1-unit jump and landing, camera control, uncapped
+rendering and audible native audio. Its two-second warm sample records 413.1
+rendered FPS, 120 logic ticks and zero interpolation restore mismatches. This
+is a short headless observation, not a sustained/windowed performance claim.
+Two earlier cold-start probes failed before the native socket/audio capture
+was ready; their failed recordings remain separate from the successful run.
+The final compressed MP4 is 77.2 seconds, H.264 720p60 with AAC stereo, and
+4,383,148 bytes. Decoded audio is audible; sampled gameplay/jump frames are
+reviewed independently. No Player save or settings were used.
+
 ## Source and output layout
 
 - `tools/browser-builder/web/`: static intake, progress and download interface.

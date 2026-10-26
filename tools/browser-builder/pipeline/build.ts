@@ -1,5 +1,6 @@
 import { writeDmgToOpfs, entryFromBlob, type DmgEntry } from '../dmg';
 import { sealApp } from '../signing';
+import { addFinderInstaller, createInstallerResource } from '../installer/layout';
 import { prepareBrowserProvenance, type BrowserProvenanceInput } from './provenance';
 
 export type Stage = 'validate' | 'extract' | 'rewrite' | 'shaders' | 'package' | 'dmg';
@@ -190,12 +191,14 @@ export async function runBrowserBuild(input: { nsp: File; prodKeys: File; titleK
     if (icon) entries.push(entryFromBlob('Super Mario Odyssey.app/Contents/Resources/Game.icns', icon));
     if (!entries.some(entry => entry.path.endsWith('/main.patched.bin')) || !entries.some(entry => entry.path.endsWith('/shader_map.tsv'))) throw new Error('The converters did not produce a complete playable app.');
     entries.push(await provenance({ nsp: input.nsp, extraction, rewriter: rewritten, shaderChain: graphics.chain, runtimeSource: template.source }, p => report({ stage: active, message: `Recording local input provenance · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.fraction })));
+    entries.push(await createInstallerResource());
     const sealedEntries = await sealApp(entries, { appName: 'Super Mario Odyssey.app', signal, progress: p => report({ stage: active, message: `Sealing app resources · ${(p.hashedBytes / 1024 ** 3).toFixed(2)} GB checked`, fraction: p.totalBytes ? p.hashedBytes / p.totalBytes : undefined }) });
     // Volume artwork lives outside the signed app; reuse the exact locally
     // extracted HOME-menu icon without adding a public bundled game asset.
     if (icon) sealedEntries.push(entryFromBlob('.VolumeIcon.icns', icon));
+    const installer = await addFinderInstaller(sealedEntries, { volumeName: 'Super Mario Odyssey' });
     signal.throwIfAborted(); active = 'dmg'; report({ stage: active, message: 'Creating your disk image locally…' });
-    const result = await writeDmgToOpfs(sealedEntries, job, 'Super Mario Odyssey.dmg', { signal, volumeName: 'Super Mario Odyssey', onFileWritten: entry => reclaim.written(entry), onProgress: p => report({ stage: active, message: `Creating disk image · ${(p.writtenBytes / 1024 ** 3).toFixed(2)} GB`, fraction: Math.min(p.writtenBytes / p.volumeBytes, 1) }) });
+    const result = await writeDmgToOpfs(installer.entries, job, 'Super Mario Odyssey.dmg', { signal, volumeName: 'Super Mario Odyssey', timestamp: installer.timestamp, openFolder: '', onFileWritten: entry => reclaim.written(entry), onProgress: p => report({ stage: active, message: `Creating disk image · ${(p.writtenBytes / 1024 ** 3).toFixed(2)} GB`, fraction: Math.min(p.writtenBytes / p.volumeBytes, 1) }) });
     await closePackedStores(shaderOutput);
     // Keep only the finished image; reclaim the multi-gigabyte intermediates.
     for (const name of ['extracted', 'patched', 'graphics']) await job.removeEntry(name, { recursive: true });

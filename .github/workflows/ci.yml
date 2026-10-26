@@ -19,7 +19,7 @@ jobs:
           bun-version: 1.4.3
       - name: Install dependencies
         run: |
-          brew install ffmpeg
+          brew install ffmpeg uv
           bun install --cwd tools/browser-builder --frozen-lockfile
           bun install --cwd tools/browser-builder/signing --frozen-lockfile
           bun install --cwd tools/browser-builder/dmg --frozen-lockfile
