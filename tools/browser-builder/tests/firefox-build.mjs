@@ -1,12 +1,24 @@
 import puppeteer from 'puppeteer-core';
-import {mkdir,readFile,writeFile,rm,stat} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rm,stat,statfs,readdir,link,open} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {resolve,sep} from 'node:path';
 const root=resolve(import.meta.dirname,'../../..'),args=process.argv.slice(2),option=n=>{const i=args.indexOf(n);return i<0?undefined:args[i+1];};
 const nsp=option('--nsp'),keys=option('--keys'),title=option('--title-keys'),site=resolve(option('--site')??resolve(root,'tools/browser-builder/dist'));
+const retainOpfs=args.includes('--retain-opfs');
+async function retainOwnedImage(profile,destination,expectedBytes){
+  const candidates=[];
+  async function walk(directory){for(const entry of await readdir(directory,{withFileTypes:true})){const path=resolve(directory,entry.name);if(entry.isDirectory())await walk(path);else if(entry.isFile()&&(await stat(path)).size===expectedBytes)candidates.push(path);}}
+  await walk(resolve(profile,'storage'));
+  if(candidates.length!==1)throw Error('Cannot uniquely locate the completed image in the owned Firefox profile');
+  const file=await open(candidates[0],'r');
+  try{const marker=Buffer.alloc(4);await file.read(marker,0,4,expectedBytes-512);if(marker.toString()!=='koly')throw Error('Owned OPFS export is not a completed UDIF image');}finally{await file.close();}
+  await link(candidates[0],destination);
+}
 if(!nsp||!keys)throw Error('Usage: bun tests/firefox-build.mjs --nsp PATH --keys PATH [--title-keys PATH] [--site DIR]');
 const work=resolve(root,'tmp/odyssey/opfs-firefox',new Date().toISOString().replaceAll(':','-')),profile=resolve(work,'profile');await mkdir(work,{recursive:true});console.log('FIREFOX_BUILD_ARTIFACTS='+work);
+const disk=await statfs(work),freeBytes=disk.bavail*disk.bsize;
+if(freeBytes<(retainOpfs?11:18)*1024**3)throw Error('Insufficient free space for the isolated test; retain at least 18 GiB, or 11 GiB with --retain-opfs (test-only hard-link export without a duplicate download)');
 const catalog=JSON.parse(await readFile(resolve(site,'build-manifest.json'),'utf8'));if(catalog.format!==1)throw Error('Assemble the complete release first.');
 const requests=[],progress=[],storage=[],errors=[];const server=Bun.serve({hostname:'127.0.0.1',port:0,async fetch(req){const u=new URL(req.url);requests.push({method:req.method,path:u.pathname});if(!['GET','HEAD'].includes(req.method)||u.search)return new Response('No upload endpoint',{status:405});const target=resolve(site,u.pathname==='/'?'index.html':'.'+decodeURIComponent(u.pathname));if(!target.startsWith(site+sep))return new Response('Not found',{status:404});const f=Bun.file(target);if(!await f.exists())return new Response('Not found',{status:404});return new Response(req.method==='HEAD'?null:f,{headers:{'Content-Type':f.type,'Cache-Control':'no-store'}});}});
 let browser,page,outcome;const started=Date.now();
@@ -18,6 +30,8 @@ await(await page.$('#files')).uploadFile(...[nsp,keys,title].filter(Boolean).map
 const output=await page.evaluate(async()=>{const jobs=await(await navigator.storage.getDirectory()).getDirectoryHandle('switchrecomp');const found=[];for await(const job of jobs.values()){if(job.kind!=='directory')continue;const names=[];for await(const name of job.keys())names.push(name);const file=await(await job.getFileHandle('Super Mario Odyssey.dmg')).getFile();found.push({bytes:file.size,names});}return found;});
 if(output.length!==1||output[0].names.length!==1||output[0].names[0]!=='Super Mario Odyssey.dmg')throw Error('Completed Firefox build retained temporary inputs');
 const expectedBytes=output[0].bytes;
-await page.click('#download');const dmg=resolve(work,'Super Mario Odyssey.dmg'),end=Date.now()+5*60*1000;let info;while(Date.now()<end){info=await stat(dmg).catch(()=>undefined);const partial=await stat(dmg+'.part').catch(()=>undefined);if(info?.size===expectedBytes&&!partial)break;await Bun.sleep(500);}if(!info||info.size!==expectedBytes||await stat(dmg+'.part').catch(()=>undefined))throw Error('Firefox DMG download did not complete');const hash=createHash('sha256');for await(const chunk of createReadStream(dmg))hash.update(chunk);
-outcome={passed:true,readyElapsedMs,elapsedMs:Date.now()-started,dmg,bytes:info.size,sha256:hash.digest('hex'),initial,result,output,peakUsage:Math.max(...storage.map(s=>s.usage??0)),storageSamples:storage.length};console.log('FIREFOX_DMG='+dmg);
+const dmg=resolve(work,'Super Mario Odyssey.dmg');let info;
+if(retainOpfs){await retainOwnedImage(profile,dmg,expectedBytes);info=await stat(dmg);}else{await page.click('#download');const end=Date.now()+5*60*1000;while(Date.now()<end){info=await stat(dmg).catch(()=>undefined);const partial=await stat(dmg+'.part').catch(()=>undefined);if(info?.size===expectedBytes&&!partial)break;await Bun.sleep(500);}if(!info||info.size!==expectedBytes||await stat(dmg+'.part').catch(()=>undefined))throw Error('Firefox DMG download did not complete');}
+const hash=createHash('sha256');for await(const chunk of createReadStream(dmg))hash.update(chunk);
+outcome={passed:true,exportMethod:retainOpfs?'hard-link-owned-opfs':'browser-download',downloaded:!retainOpfs,freeBytes,readyElapsedMs,elapsedMs:Date.now()-started,dmg,bytes:info.size,sha256:hash.digest('hex'),initial,result,output,peakUsage:Math.max(...storage.map(s=>s.usage??0)),storageSamples:storage.length};console.log('FIREFOX_DMG='+dmg);
 }catch(e){outcome={passed:false,elapsedMs:Date.now()-started,error:String(e)};throw e;}finally{await browser?.close();server.stop(true);await writeFile(resolve(work,'result.json'),JSON.stringify({...outcome,requests,progress,storage,errors,boundary:'Owned headless Firefox; natural 10 GiB quota, no persistence permission or user profile.'},null,2)+'\n');await writeFile(resolve(work,'session-closed'),'owned browser closed');await rm(profile,{recursive:true,force:true});console.log('FIREFOX_BUILD_RESULT='+resolve(work,'result.json'));}
