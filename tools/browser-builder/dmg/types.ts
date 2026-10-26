@@ -6,9 +6,11 @@ export interface DmgReader {
 export interface DmgEntry {
   path: string;
   size: number;
-  /** Permissions, or permissions plus S_IFREG/S_IFDIR. No special mode bits. */
+  /** Permissions, or permissions plus matching S_IFREG/S_IFDIR/S_IFLNK. No special bits. */
   mode: number;
-  type?: "file" | "directory";
+  type?: "file" | "directory" | "symlink";
+  /** Symlinks only: exact bounded UTF-8 target; size must match and open is forbidden. */
+  target?: string;
   /** Optional conversion digest; resource sealing verifies it before signing. */
   expectedSha256?: string;
   open?: () => Promise<DmgReader> | DmgReader;
@@ -19,9 +21,11 @@ export interface DmgOptions {
   volumeName?: string;
   chunkSize?: number;
   timestamp?: number;
+  /** Existing relative directory to open in Finder; "" selects root. Omission leaves Finder info unchanged. */
+  openFolder?: string;
   signal?: AbortSignal;
   onProgress?: (progress: { writtenBytes: number; volumeBytes: number; path?: string }) => void;
-  /** Awaited once per file after payload/padding writes and reader close; may release private input. */
+  /** Awaited once per regular file or symlink after payload/padding and reader close. */
   onFileWritten?: (entry: DmgEntry) => void | Promise<void>;
 }
 export interface DmgResult {

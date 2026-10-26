@@ -3,8 +3,10 @@ import puppeteer from "puppeteer-core";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const repo = resolve(import.meta.dir, "../../../.."), scratch = resolve(repo, "tmp/odyssey/browser-dmg");
-const large = process.argv.includes("--large"), name = large ? "browser-large.dmg" : "browser-small.dmg";
+const repo = resolve(import.meta.dir, "../../../..");
+const symlinks = process.argv.includes("--symlinks");
+const scratch = resolve(repo, symlinks ? "tmp/odyssey/dmg-layout/symlink-agent/browser" : "tmp/odyssey/browser-dmg");
+const large = process.argv.includes("--large"), name = symlinks ? "browser-symlink.dmg" : large ? "browser-large.dmg" : "browser-small.dmg";
 const downloads = resolve(scratch, "downloads"); await mkdir(downloads, { recursive: true });
 const profile = resolve(scratch, large ? "profile-large" : "profile-small");
 await rm(profile, { recursive: true, force: true });
@@ -20,7 +22,7 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
   if (req.method !== "GET") return new Response("Read only", { status: 405 });
   if (url.pathname === "/worker.js") return new Response(worker, { headers: { "Content-Type": "text/javascript" } });
   if (url.pathname.startsWith("/fixture/") && !url.pathname.includes("..")) {
-    const path = resolve(scratch, "fixture/BrowserFixture.app/Contents", url.pathname.slice(9));
+    const path = resolve(repo, "tmp/odyssey/browser-dmg/fixture/BrowserFixture.app/Contents", url.pathname.slice(9));
     return new Response(Bun.file(path));
   }
   if (url.pathname === "/") return new Response(`<!doctype html><title>Isolated browser DMG acceptance</title><p id="status">Writing disk image in a dedicated worker.</p><script>
@@ -35,7 +37,7 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
       else { document.querySelector('#status').textContent=String(e.data.progress); console.log('worker-progress', e.data.progress); }
     };
     worker.onerror = e => window.testResult={error:e.message};
-    worker.postMessage({large:${large}});
+    worker.postMessage({large:${large},symlinks:${symlinks}});
   </script>`, { headers: { "Content-Type": "text/html" } });
   return new Response("Not found", { status: 404 });
 } });

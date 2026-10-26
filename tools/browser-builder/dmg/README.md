@@ -13,7 +13,7 @@ website worker, with OPFS and user-selected File/Blob inputs.
 ## API
 
 ```ts
-import { entryFromBlob, writeDmgToOpfs } from "./dmg/index";
+import { entryFromBlob, entryFromSymlink, writeDmgToOpfs } from "./dmg/index";
 
 // Inside a dedicated worker; compiledExecutable and infoPlist are File/Blob
 // objects from earlier LOCAL browser pipeline stages.
@@ -22,9 +22,11 @@ const job = await root.getDirectoryHandle(crypto.randomUUID(), { create: true })
 const result = await writeDmgToOpfs([
   entryFromBlob("Game.app/Contents/MacOS/Game", compiledExecutable, 0o755),
   entryFromBlob("Game.app/Contents/Info.plist", infoPlist),
+  entryFromSymlink("Applications", "/Applications"),
   // Add every runtime library, asset and signature file here.
 ], job, "Game.dmg", {
   volumeName: "Game",
+  openFolder: "", // Ask Finder to open the volume root.
   signal: abortController.signal,
   onProgress: ({ writtenBytes, volumeBytes, path }) => {
     postMessage({ writtenBytes, volumeBytes, path });
@@ -41,7 +43,8 @@ type DmgEntry = {
   path: string;       // relative slash-separated path
   size: number;       // safe integer; does NOT have a 32-bit file-size limit
   mode: number;       // e.g. 0o755 or 0o100755
-  type?: "file" | "directory";
+  type?: "file" | "directory" | "symlink";
+  target?: string;    // symlink only; exact UTF-8 bytes, not normalized
   open?: () => Promise<{
     read(target: Uint8Array): Promise<number> | number;
     close?(): Promise<void> | void;
@@ -57,6 +60,36 @@ Partial reads are valid. The writer verifies the declared length and checks for
 extra bytes, and closes each opened reader in a finally block. No source is
 opened during `planDmg(entries, options)` preflight. Directories are implicit by
 default; explicit directories have type `directory`, size 0 and no `open`.
+
+`entryFromSymlink(path, target)` creates a real HFSX symbolic link, including the
+root `Applications` -> `/Applications` entry used for drag-to-Applications images.
+It returns `{ path, type: "symlink", target, size, mode: 0o777 }`. Direct symlink
+entries must supply an exact UTF-8 byte size and target with no `open` reader.
+Targets must be nonempty, well-formed Unicode with at most 1023 UTF-8 bytes and
+no NUL, C0/C1 control characters or backslash. Both absolute and relative targets
+(including dot segments and dangling links) are accepted. Target bytes are never
+normalized, resolved, dereferenced or NUL-terminated. Entry paths still obey the
+ordinary HFS path restrictions. Matching optional BSD S_IFLNK bits and ordinary
+rwx permissions are accepted; special bits and mismatched types reject preflight.
+
+Links use BSD mode 0120000, Finder file type `slnk`, creator `rhap`, and their
+ordinary data fork contains the target bytes. A private reader encodes at most
+1023 bytes and uses the same bounded write/padding/cancellation path as regular
+files. Links count as files and cannot act as parent directories. A symlink named
+`.VolumeIcon.icns` does not activate custom-volume-icon flags.
+
+`openFolder?: string` selects a directory already present in the completed plan,
+including implicit directories; `""` selects the root. Paths use the same HFS
+normalization and restrictions as entry paths. Missing folders, regular files,
+symlinks and invalid paths fail before output. The directory CNID is written to
+volume-header Finder info field 2 (byte 88), in both primary and alternate
+headers. Omission leaves existing image bytes unchanged. The exposed
+`planDmg(...).items` retains path, CNID `id`, directory flag and extent metadata
+for callers locating background files. Supply the same explicit Unix `timestamp`
+to every plan/write call; `plan.time` is the corresponding HFS creation time
+(Unix seconds + 2082844800), also used in the root catalog and volume headers.
+An alias referring to this volume should use that exact HFS creation time.
+The option stores Finder's opening-folder metadata; it does not launch Finder.
 
 To supply the mounted volume's icon, include a regular root file named exactly
 `.VolumeIcon.icns` with the caller's ICNS bytes. The writer automatically sets
@@ -78,9 +111,9 @@ exclusive job directory and a unique output name; concurrent writers must never
 share that destination. An abruptly terminated worker requires the caller to
 remove its abandoned job directory after its handles are released.
 
-`onFileWritten(entry)` is awaited exactly once per regular file, including empty
-files, after its reader closes and all payload and allocation padding writes
-resolve. It receives the original input entry; directories do not trigger it.
+`onFileWritten(entry)` is awaited exactly once per regular file or symlink,
+including empty regular files, after its reader closes and all payload and
+allocation padding writes resolve. It receives the original input entry; directories do not trigger it.
 The callback may delete a private job input that has no remaining consumers.
 Callers sharing physical sources across entries must track those consumers before
 deleting; the writer does not manage input ownership. Cancellation is checked
@@ -112,9 +145,9 @@ validation. CRC32 detects corruption and is not an authenticity signature.
   implementation and preserves executable permissions and files over 4 GiB.
   Case-only name pairs can exist on the image; callers targeting a normal
   case-insensitive APFS destination should avoid such collisions in app bundles.
-- Files and directories only. Symlinks, hard links, resource forks and xattrs are
-  rejected/unsupported; flatten framework symlinks before packaging, and include
-  normal signature files. Modes allow only normal rwx permissions (no setuid,
+- Regular files, directories and bounded symbolic links are supported. Hard
+  links, resource forks and general xattrs are unsupported. Include normal
+  signature files. Modes allow only normal rwx permissions (no setuid,
   devices or sockets). Names use frozen Unicode 3.2 decomposition with Apple's
   exclusions; decomposed names must fit 255 UTF-16 units. Traversal, empty path
   segments, colon, backslash and control characters are rejected.
@@ -139,6 +172,9 @@ bun run typecheck
 /bin/zsh test/prepare-fixture.sh
 bun run ./test/browser.ts
 /bin/zsh test/verify-macos.sh small
+# Focused drag-to-Applications acceptance: no Finder UI or app execution.
+bun run ./test/browser.ts --symlinks
+bun run ./test/verify-symlinks-macos.ts
 bun run ./test/browser.ts --large
 /bin/zsh test/verify-macos.sh large
 bun run ./test/corrupt.ts
@@ -168,6 +204,15 @@ Custom-volume-icon flags were checked against the installed Apple SDK's
 both catalog records put `userInfo` at byte 48 and its Finder flags at byte 8,
 so the 16-bit big-endian flags occupy catalog-record bytes 56-57. These are
 separate from the catalog flags at byte 2 and the volume header's Finder data.
+The installed SDK also defines `kSymLinkFileType = 0x736c6e6b` and
+`kSymLinkCreator = 0x72686170` in `hfs_format.h`, `S_IFLNK = 0120000`
+in `sys/_types/_s_ifmt.h`, and `PATH_MAX = 1024` in `sys/syslimits.h`.
+`HFSPlusVolumeHeader.finderInfo` starts at byte 80. Readonly mounted-device
+inspection checks opening-folder field 2 at byte 88 against the directory CNID.
+`bless --info` independently confirmed field 2 as the first directory in the
+open-folder list on the readonly scratch image; this machine's
+Apple Silicon `bless --openfolder` option is unsupported and is not needed by
+the browser writer.
 The HFS+ normalization version is frozen at Unicode 3.2, with Apple's exclusions;
 JavaScript's evolving `String.normalize` is unsuitable for this format.
 

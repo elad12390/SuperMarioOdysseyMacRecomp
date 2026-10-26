@@ -1,11 +1,13 @@
 import { BLOCK, NODE, crc32, round } from "./binary";
 import { bitmap, planDmg, treeHeader, treeNode, volumeHeader } from "./hfsx";
 import { udifTail } from "./udif";
+import { symlinkReader } from "./symlink";
 import type { DmgEntry, DmgOptions, DmgResult, DmgSink } from "./types";
 export { crc32 } from "./binary";
 export { planDmg } from "./hfsx";
 export { inspectDmg } from "./udif";
 export { writeDmgToOpfs, entryFromBlob } from "./opfs";
+export { entryFromSymlink } from "./symlink";
 export type * from "./types";
 
 /** Sequential output, O(metadata + chunkSize) memory. Sink lifetime is caller-owned. */
@@ -40,7 +42,7 @@ export async function writeDmg(entries: readonly DmgEntry[], sink: DmgSink, opti
   for (const item of plan.items) {
     if (item.directory) continue;
     aborted();
-    const reader = await item.source!.open!();
+    const reader = item.symlinkTarget !== undefined ? symlinkReader(item.symlinkTarget) : await item.source!.open!();
     try {
       let remaining = item.size;
       while (remaining > 0) {

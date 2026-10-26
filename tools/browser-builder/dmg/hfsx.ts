@@ -1,11 +1,12 @@
 import { BLOCK, NODE, fork, u64, utf16, view } from "./binary";
 import { hfsName, hfsPath } from "./names";
+import { symlinkBytes } from "./symlink";
 import type { DmgEntry, DmgOptions } from "./types";
 
 interface Item {
   path: string; name: string; id: number; parent: number; directory: boolean;
   mode: number; size: number; start: number; blocks: number; children: number; subfolders: number;
-  source?: DmgEntry; explicit: boolean; finderFlags?: number;
+  source?: DmgEntry; explicit: boolean; finderFlags?: number; symlinkTarget?: string;
 }
 interface Record { parent: number; name: string; key: Uint8Array; data: () => Uint8Array; length: number }
 interface TreeNode { id: number; height: number; records: Record[]; previous: number; next: number }
@@ -17,6 +18,7 @@ export interface DmgPlan {
   readonly tree: Tree;
   readonly bitmapBlocks: number; readonly catalogStart: number; readonly dataStart: number;
   readonly usedEnd: number; readonly totalBlocks: number; readonly time: number;
+  readonly openFolderId?: number;
 }
 function key(parent: number, name: string) {
   const b = new Uint8Array(8 + name.length * 2), v = view(b);
@@ -29,7 +31,11 @@ function itemData(item: Item, time: number) {
   v.setUint32(8, item.id);
   for (const at of [12, 16, 20, 24]) v.setUint32(at, time);
   v.setUint32(32, 99); v.setUint32(36, 99);
-  v.setUint16(42, (item.directory ? 0o040000 : 0o100000) | item.mode);
+  v.setUint16(42, (item.directory ? 0o040000 : item.symlinkTarget !== undefined ? 0o120000 : 0o100000) | item.mode);
+  if (item.symlinkTarget !== undefined) {
+    v.setUint32(48, 0x736c6e6b); // kSymLinkFileType, 'slnk' (hfs_format.h)
+    v.setUint32(52, 0x72686170); // kSymLinkCreator, 'rhap'
+  }
   // HFSPlusCatalog{Folder,File}.userInfo (48) + Finder flags (8), big-endian.
   if (item.finderFlags) v.setUint16(56, item.finderFlags);
   // Finder treats .app directories as bundles by extension.
@@ -100,24 +106,41 @@ export function planDmg(entries: readonly DmgEntry[], options: DmgOptions = {}):
     const directory = !entry || entry.type === "directory";
     const item: Item = { path, name: path.slice(split + 1), id: 16 + items.length - 1, parent: parent.id, directory,
       mode: entry ? entry.mode & 0o777 : 0o755, size: entry?.size ?? 0, start: 0,
-      blocks: directory ? 0 : Math.ceil(entry!.size / BLOCK), children: 0, subfolders: 0, source: entry, explicit: !!entry };
+      blocks: directory ? 0 : Math.ceil(entry!.size / BLOCK), children: 0, subfolders: 0, source: entry, explicit: !!entry,
+      symlinkTarget: entry?.type === "symlink" ? entry.target : undefined };
     parent.children++; if (directory) parent.subfolders++; items.push(item); map.set(path, item);
     if (items.length > 100000) throw Error("At most 100000 catalog objects are supported");
     return item;
   }
   for (const entry of entries) {
-    if (entry.type !== undefined && entry.type !== "file" && entry.type !== "directory") throw Error("Unsupported entry type");
+    if (entry.type !== undefined && entry.type !== "file" && entry.type !== "directory" && entry.type !== "symlink") throw Error("Unsupported entry type");
     if (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > (0xffffffff - 4096) * BLOCK) throw Error("Invalid or excessive file size");
     const typeBits = entry.mode & 0o170000;
-    if (!Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o170777 || (entry.mode & ~0o170777) || (typeBits && typeBits !== (entry.type === "directory" ? 0o040000 : 0o100000))) throw Error("Unsupported mode or file type");
-    if (entry.type === "directory" ? entry.size !== 0 || !!entry.open : typeof entry.open !== "function") throw Error("Files need open(); directories must have zero size and no payload");
+    const expectedType = entry.type === "directory" ? 0o040000 : entry.type === "symlink" ? 0o120000 : 0o100000;
+    if (!Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o170777 || (entry.mode & ~0o170777) || (typeBits && typeBits !== expectedType)) throw Error("Unsupported mode or file type");
+    if (entry.type === "symlink") {
+      if (symlinkBytes(entry.target).length !== entry.size || entry.open !== undefined) throw Error("Symlink size must match target; open() is forbidden");
+    } else {
+      if (entry.target !== undefined) throw Error("Only symlinks may specify a target");
+      if (entry.type === "directory" ? entry.size !== 0 || !!entry.open : typeof entry.open !== "function") throw Error("Files need open(); directories must have zero size and no payload");
+    }
     // Item snapshots layout metadata; retain the caller's entry for completion callbacks.
     insert(hfsPath(entry.path), entry);
   }
   const volumeIcon = map.get(".VolumeIcon.icns");
-  if (volumeIcon && !volumeIcon.directory) {
+  if (volumeIcon && !volumeIcon.directory && volumeIcon.symlinkTarget === undefined) {
     root.finderFlags = 0x0400; // kHasCustomIcon (Finder.h)
     volumeIcon.finderFlags = 0x4000; // kIsInvisible
+  }
+  let openFolderId: number | undefined;
+  if (options.openFolder !== undefined) {
+    if (typeof options.openFolder !== "string") throw Error("openFolder must be a relative directory path");
+    let folderPath: string;
+    try { folderPath = options.openFolder === "" ? "" : hfsPath(options.openFolder); }
+    catch { throw Error(`Invalid openFolder directory path: ${options.openFolder}`); }
+    const folder = map.get(folderPath);
+    if (!folder?.directory) throw Error(`openFolder is not an existing directory: ${options.openFolder}`);
+    openFolderId = folder.id;
   }
   const tree = buildTree(recordsFor(items, time));
   // Header map covers all nodes. Reject instead of silently emitting a bad tree.
@@ -137,7 +160,7 @@ export function planDmg(entries: readonly DmgEntry[], options: DmgOptions = {}):
   for (const item of items) if (item.blocks) { item.start = next; next += item.blocks; }
   return { volumeName, volumeBytes: totalBlocks * BLOCK, metadataBytes: dataStart * BLOCK,
     fileCount: items.filter(x => !x.directory).length, items, tree, bitmapBlocks, catalogStart, dataStart,
-    usedEnd: next, totalBlocks, time };
+    usedEnd: next, totalBlocks, time, openFolderId };
 }
 
 export function volumeHeader(p: DmgPlan): Uint8Array {
@@ -148,6 +171,8 @@ export function volumeHeader(p: DmgPlan): Uint8Array {
   v.setUint32(40, BLOCK); v.setUint32(44, p.totalBlocks); v.setUint32(48, p.totalBlocks - p.usedEnd - 1);
   v.setUint32(52, p.usedEnd); v.setUint32(56, BLOCK); v.setUint32(60, BLOCK);
   v.setUint32(64, p.items.length + 15); v.setUint32(68, 1); u64(v, 72, 1);
+  // Finder's first directory to open: finderInfo[2], distinct from boot blessing fields.
+  if (p.openFolderId !== undefined) v.setUint32(88, p.openFolderId);
   // Deterministic nonzero volume ID, not a filesystem path or machine ID.
   v.setUint32(104, 0x42545331); v.setUint32(108, p.time);
   fork(b, 112, Math.ceil(p.totalBlocks / 8), 1, p.bitmapBlocks);

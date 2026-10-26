@@ -1,4 +1,4 @@
-import { entryFromBlob, inspectDmg, planDmg, writeDmgToOpfs, type DmgEntry } from "../index";
+import { entryFromBlob, entryFromSymlink, inspectDmg, planDmg, writeDmgToOpfs, type DmgEntry } from "../index";
 
 declare const self: DedicatedWorkerGlobalScope;
 const text = new TextEncoder();
@@ -11,7 +11,7 @@ self.onmessage = async event => {
     const root = await navigator.storage.getDirectory();
     const job = await root.getDirectoryHandle("browser-dmg-test", { create: true });
     self.postMessage({ progress: "worker-ready" });
-    const { large } = event.data as { large: boolean };
+    const { large, symlinks } = event.data as { large: boolean; symlinks?: boolean };
     const names = ["Info.plist", "MacOS/BrowserFixture", "Resources/message.txt", "_CodeSignature/CodeResources"];
     const entries: DmgEntry[] = [];
     for (const name of names) {
@@ -23,6 +23,12 @@ self.onmessage = async event => {
     for (const name of ["Caf\u00e9", "\u212b", "\u65e5\u672c\u8a9e", "\ud55c\uae00", "\ud83d\ude80"]) entries.push(blobEntry(`unicode/${name}`, "unicode-ok\n"));
     entries.push({ path: "empty-directory", size: 0, mode: 0o750, type: "directory" });
     entries.push(blobEntry("empty-file", ""));
+    if (symlinks) entries.push(
+      entryFromSymlink("Applications", "/Applications"),
+      entryFromSymlink("message-link", "BrowserFixture.app/Contents/Resources/message.txt"),
+      entryFromSymlink("dangling-utf8", "../Caf\u00e9"),
+      entryFromSymlink("long-link", "a".repeat(1023)),
+    );
     const hugeSize = 2 ** 32 + 37;
     if (large) entries.push({ path: "large-resource.bin", size: hugeSize, mode: 0o644, open: () => {
       let at = 0; opened++;
@@ -36,7 +42,7 @@ self.onmessage = async event => {
         at += n; sourceReads++; sourceReadMax = Math.max(sourceReadMax, n); return n;
       }, close() { closed++; } };
     } });
-    const name = large ? "browser-large.dmg" : "browser-small.dmg";
+    const name = symlinks ? "browser-symlink.dmg" : large ? "browser-large.dmg" : "browser-small.dmg";
     // Cancellation and EOF failures must remove incomplete job files.
     const errors: string[] = [];
     try {
@@ -94,14 +100,14 @@ self.onmessage = async event => {
     if (released !== 1 || consumedInspection.dataChecksum !== consumedResult.dataChecksum ||
       !sourceBytes.every((byte, i) => consumedBytes[extent.start * 4096 + i] === byte)) throw Error("Consumed source data or CRC changed");
     await job.removeEntry("consumed.dmg");
-    for (const kind of ["failure", "cancellation"]) {
+    for (const kind of ["failure", "cancellation", ...(symlinks ? ["link-failure", "link-cancellation"] : [])]) {
       const controller = new AbortController(), outputName = `callback-${kind}.dmg`;
       const reason = new Error(`callback-${kind}`); let callbacks = 0;
       try {
-        await writeDmgToOpfs([blobEntry("data", "payload")], job, outputName, {
+        await writeDmgToOpfs([kind.startsWith("link-") ? entryFromSymlink("Applications", "/Applications") : blobEntry("data", "payload")], job, outputName, {
           signal: controller.signal, onFileWritten: async () => {
             callbacks++; await new Promise<void>(done => setTimeout(done, 0));
-            if (kind === "failure") throw reason;
+            if (kind.endsWith("failure")) throw reason;
             controller.abort(reason);
           },
         });
@@ -113,9 +119,14 @@ self.onmessage = async event => {
     }
     const started = performance.now();
     let lastReport = 0;
+    const completed: DmgEntry[] = [];
     const result = await writeDmgToOpfs(entries, job, name, {
       volumeName: "Browser DMG Fixture", timestamp: 1792886400,
+      openFolder: symlinks ? "" : undefined,
       chunkSize: 1024 * 1024,
+      onFileWritten: symlinks ? async entry => {
+        await new Promise<void>(done => setTimeout(done, 0)); completed.push(entry);
+      } : undefined,
       onProgress: p => { if (p.writtenBytes - lastReport >= 256 * 1024 * 1024) { lastReport = p.writtenBytes; self.postMessage({ progress: p.writtenBytes }); } },
     });
     const elapsedMs = performance.now() - started;
@@ -133,8 +144,20 @@ self.onmessage = async event => {
       } });
     } finally { verifyHandle.close(); }
     const file = await result.file.getFile();
+    const plan = planDmg(entries, { volumeName: "Browser DMG Fixture", timestamp: 1792886400, openFolder: symlinks ? "" : undefined });
+    if (symlinks) {
+      const expected = entries.filter(entry => entry.type !== "directory");
+      if (completed.length !== expected.length || completed.some((entry, i) => entry !== expected[i])) throw Error("Symlink callback identity/order changed");
+      for (const entry of entries.filter(entry => entry.type === "symlink")) {
+        const item = plan.items.find(item => item.source === entry)!;
+        const payload = new Uint8Array(await file.slice(item.start * 4096, item.start * 4096 + item.size).arrayBuffer());
+        const expected = text.encode(entry.target);
+        if (payload.length !== expected.length || payload.some((byte, i) => byte !== expected[i])) throw Error("Symlink target bytes changed in OPFS");
+      }
+    }
     const { file: _handle, ...stats } = result;
     self.postMessage({ done: true, file, stats: { ...stats, elapsedMs, sourceReadMax, sourceReads, opened, closed, inspection, errors,
-      opfsFailuresCleaned: true, consumedSourceReleased: released === 1, consumedSourceVerified: true } });
+      opfsFailuresCleaned: true, consumedSourceReleased: released === 1, consumedSourceVerified: true,
+      ...(symlinks ? { symlinksVerified: true, completedEntries: completed.length, openFolderId: plan.openFolderId } : {}) } });
   } catch (error) { self.postMessage({ error: String(error), stack: error instanceof Error ? error.stack : "" }); }
 };

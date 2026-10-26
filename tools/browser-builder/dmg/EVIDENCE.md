@@ -1,11 +1,117 @@
 # Verified browser disk-image stage
 
-Verified locally on Apple Silicon macOS on 2026-10-25. The fixture-based module
+Verified locally on Apple Silicon macOS on 2026-10-25, with focused additions on
+2026-10-26. The fixture-based module
 checks below are independent packaging evidence. Their initial runs used no game
 inputs, Player installation or saves. The subsequent full Firefox integration
 uses private local game inputs; its scope and measurements are recorded in
 [the browser release documentation](../../../docs/browser-release.md#firefox-disk-image-storage).
 No native game or desktop window was launched for the storage regression.
+
+## Bounded symlinks and Finder opening folder (2026-10-26)
+
+Intent and Gherkin were updated before implementation. New tests ran RED:
+`03-red.log` / exit 1 records the missing `entryFromSymlink` export;
+`05-red-open-folder.log` / exit 1 records 14 failing real-writer tests:
+field 2 was zero instead of the selected CNID, and invalid folders were accepted.
+All paths in this section are relative to
+`tmp/odyssey/dmg-layout/symlink-agent/`, with captured PID/log/exit files.
+
+Final checks:
+
+| Command from repository root | Result | Evidence |
+| --- | --- | --- |
+| `bun test ./tools/browser-builder/dmg/test` | 62 pass, 0 fail, 4888 assertions | `24-final-tests.log` |
+| `bun run --cwd tools/browser-builder/dmg typecheck` | Exit 0 | `24-final-tests.log` |
+| `bun run --cwd tools/browser-builder typecheck` | Exit 0 | `22-consumer-typecheck.log` |
+| `bun run --cwd tools/browser-builder test` | 13 pass, 0 fail, 51 assertions | `16-builder-tests.log` |
+| `bun tools/browser-builder/dmg/test/browser.ts --symlinks` | Exit 0, real worker and OPFS output | `11-browser-symlinks.log` |
+| `bun tools/browser-builder/dmg/test/verify-symlinks-macos.ts` | Exit 0, MACOS_SYMLINK_ACCEPTANCE_OK | `19-final-native.log` |
+| `git diff --check -- tools/browser-builder/dmg` | Exit 0 | `24-final-tests.log` |
+
+The builder-wide typecheck passed earlier in `10-typecheck.log`. An intermediate
+recheck in `18-final-tests.log` returned exit 2 after the DMG typecheck passed,
+with five typed-array compatibility errors in concurrently added, out-of-scope
+`installer/alias.ts:16`, `installer/layout.ts:20,24`, and
+`installer/plist.ts:33,35`. This task did not edit those files. The final shared
+consumer recheck in `22-consumer-typecheck.log` passed, exit 0.
+
+The existing complete-image no-icon/no-link fixed-timestamp SHA-256 regression
+still passes:
+`0ef402b6797dbb14e0ce2150d6134928c48278d160b28f07e995c3b838b0ac76`.
+A final exact-byte regression (`23-red-bom.log`, exit 1) caught default UTF-8
+TextDecoder BOM stripping during target validation. Preserving the leading BOM
+with `ignoreBOM: true` passes the same test and the full suite in
+`24-final-tests.log`, exit 0. This changes validation only; the mounted fixture
+contains no leading-BOM target.
+
+New tests independently parse catalog bytes to check S_IFLNK, Finder
+`slnk`/`rhap`, exact UTF-8 data forks without normalization or NUL, file counts,
+and a 1023-byte target. Invalid target encodings/lengths/controls, inconsistent
+size/readers, conflicting parents, special/mismatched modes and invalid opening
+folders reject before output. Callback identity/order, awaited payload/padding,
+rejection/cancellation, bounded writes and byte identity are covered. The
+`.VolumeIcon.icns` symlink does not select icon flags on either record.
+Root, implicit, explicit and nested opening folders set field 2 in both headers;
+other blessing fields remain zero. Existing `planDmg.items` metadata and shared
+`plan.time` remain available to the caller.
+
+HeadlessChrome/154.0.8037.92 wrote an 8,394,084-byte image with 1,614 files,
+including four links, in 370.1 ms (write time only; excludes verification and
+download). Browser data CRC32 is `0x88a98ce3`. Real OPFS callbacks completed
+once per original file/link entry, and rejected/cancelled symlink callbacks left
+no partial output. The browser retained explicit-offset writes; payload bytes
+and UDIF CRCs validated. Only six local GET requests were observed; no upload,
+external requests or console errors occurred. Raw stats are in
+`browser/browser-small.json`; the historical small-stats basename is retained
+inside this isolated symlink job, while the image is `browser-symlink.dmg`.
+
+Independent native acceptance used:
+
+- `hdiutil verify -verbose`: data/block/master CRCs valid, exit 0.
+- `hdiutil attach -readonly -nobrowse -noautoopen`: case-sensitive HFS+;
+  diskutil reports both media and volume non-writable.
+- Real `lstat` and byte-buffer `readlink`: `Applications` is mode
+  `120777`, size 13, target exactly `/Applications`. Relative resource,
+  non-normalized UTF-8 dangling and 1023-byte targets also match. Following the
+  relative resource link returns the original fixture bytes; `cmp` confirms
+  the original test executable bytes without running it.
+- `diskutil verifyVolume` ran `fsck_hfs -fn -x`, verified catalog,
+  extents, hierarchy and bitmap, and reported filesystem exit 0.
+- Readonly `bless --info` returned exit 0 and explicitly printed
+  `finderinfo[2]: 2 => 1st dir in open-folder list is .../mounted/`.
+  Fields 0, 1, 3, 4 and 5 remained unset. `bless --openfolder` is unsupported
+  on this Apple Silicon system; the writer does not call it.
+- After unmounting (macOS locks a mounted block device), the still-attached
+  readonly device was read directly. Primary header at 1024 and alternate at
+  8,391,680 both contain field 2 = root CNID 2 and creation time 3,875,731,200
+  (the shared explicit Unix timestamp 1,792,886,400 + HFS epoch offset).
+  Direct on-device catalog parsing also confirmed Applications mode `120777`,
+  type `slnk`, creator `rhap` and exact data-fork target. The xattr view
+  returned ENOATTR for this symlink, so validation reads its actual catalog
+  metadata instead. The device was detached in a finally block.
+
+Local source checks used the installed macOS SDK: `hfs/hfs_format.h`
+`kSymLinkFileType`/`kSymLinkCreator` and volume-header layout,
+`sys/_types/_s_ifmt.h` S_IFLNK, `sys/syslimits.h` PATH_MAX 1024 and
+`sys/param.h` MAXPATHLEN. Logs: `04-sdk.log`, `08-finder-evidence.log`.
+No internet retrieval was needed. Native verification commands each have a
+45-second deadline and captured child PID/log/exit; cleanup targets only the
+attached scratch device.
+
+Image SHA-256:
+`93375c2910ed80f7152e81beebcc7c9d6ec6718b3b62e60666aacd357e40b7ae`
+(also in `SHA256SUMS`). Independent header captures, attach/disk-info plists
+and `macos-symlinks.json` remain under the same job directory.
+
+Scope: only `tools/browser-builder/dmg/**` source files were written. The
+protected six game-harness files remained 52 insertions / 4 deletions; the
+native-savestates artifacts and game-harness intent were not touched. Concurrent
+pipeline, CI and installer changes belong to the main task. Nothing was staged,
+committed or pushed. No Finder UI, native game/app execution, arbitrary xattr or
+hard-link support, new native converter, full Firefox pipeline, >4 GiB rerun,
+DS_Store generation, background artwork or visual auto-open acceptance is claimed
+by this focused change.
 
 ## Input release and explicit OPFS offsets
 
